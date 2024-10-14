@@ -12,12 +12,7 @@ sys.path.append(
     )
 )
 from rices import RICES
-from eval.eval_datasets import (
-    CaptionDataset,
-    VQADataset,
-    ImageNetDataset,
-    HatefulMemesDataset,
-)
+from eval_datasets import VQADataset
 import os
 import torch
 
@@ -33,12 +28,6 @@ parser.add_argument("--vision_encoder_pretrained", default="openai", type=str)
 parser.add_argument("--batch_size", default=256)
 
 # Per-dataset flags
-parser.add_argument(
-    "--eval_coco",
-    action="store_true",
-    default=False,
-    help="Whether to cache COCO.",
-)
 parser.add_argument(
     "--eval_vqav2",
     action="store_true",
@@ -63,66 +52,8 @@ parser.add_argument(
     default=False,
     help="Whether to cache TextVQA.",
 )
-parser.add_argument(
-    "--eval_imagenet",
-    action="store_true",
-    default=False,
-    help="Whether to cache ImageNet.",
-)
-parser.add_argument(
-    "--eval_flickr30",
-    action="store_true",
-    default=False,
-    help="Whether to cache Flickr30.",
-)
-parser.add_argument(
-    "--eval_hateful_memes",
-    action="store_true",
-    default=False,
-    help="Whether to cache Hateful Memes.",
-)
 
 # Dataset arguments
-
-## Flickr30 Dataset
-parser.add_argument(
-    "--flickr_image_dir_path",
-    type=str,
-    help="Path to the flickr30/flickr30k_images directory.",
-    default=None,
-)
-parser.add_argument(
-    "--flickr_karpathy_json_path",
-    type=str,
-    help="Path to the dataset_flickr30k.json file.",
-    default=None,
-)
-parser.add_argument(
-    "--flickr_annotations_json_path",
-    type=str,
-    help="Path to the dataset_flickr30k_coco_style.json file.",
-)
-## COCO Dataset
-parser.add_argument(
-    "--coco_train_image_dir_path",
-    type=str,
-    default=None,
-)
-parser.add_argument(
-    "--coco_val_image_dir_path",
-    type=str,
-    default=None,
-)
-parser.add_argument(
-    "--coco_karpathy_json_path",
-    type=str,
-    default=None,
-)
-parser.add_argument(
-    "--coco_annotations_json_path",
-    type=str,
-    default=None,
-)
 
 ## VQAV2 Dataset
 parser.add_argument(
@@ -202,66 +133,9 @@ parser.add_argument(
 )
 
 
-## Imagenet dataset
-parser.add_argument("--imagenet_root", type=str, default="/tmp")
-
-## Hateful Memes dataset
-parser.add_argument(
-    "--hateful_memes_image_dir_path",
-    type=str,
-    default=None,
-)
-parser.add_argument(
-    "--hateful_memes_train_annotations_json_path",
-    type=str,
-    default=None,
-)
-
-
 def main():
     args, leftovers = parser.parse_known_args()
     device_id = torch.cuda.current_device() if torch.cuda.is_available() else "cpu"
-    if args.eval_flickr30:
-        print("Caching Flickr30k...")
-        train_dataset = CaptionDataset(
-            image_train_dir_path=args.flickr_image_dir_path,
-            image_val_dir_path=None,
-            annotations_path=args.flickr_karpathy_json_path,
-            is_train=True,
-            dataset_name="flickr",
-        )
-        rices_dataset = RICES(
-            train_dataset,
-            device_id,
-            args.batch_size,
-            vision_encoder_path=args.vision_encoder_path,
-            vision_encoder_pretrained=args.vision_encoder_pretrained,
-        )
-        torch.save(
-            rices_dataset.features,
-            os.path.join(args.output_dir, "flickr30.pkl"),
-        )
-
-    if args.eval_coco:
-        print("Caching COCO...")
-        train_dataset = CaptionDataset(
-            image_train_dir_path=args.coco_train_image_dir_path,
-            image_val_dir_path=args.coco_val_image_dir_path,
-            annotations_path=args.coco_karpathy_json_path,
-            is_train=True,
-            dataset_name="coco",
-        )
-        rices_dataset = RICES(
-            train_dataset,
-            device_id,
-            args.batch_size,
-            vision_encoder_path=args.vision_encoder_path,
-            vision_encoder_pretrained=args.vision_encoder_pretrained,
-        )
-        torch.save(
-            rices_dataset.features,
-            os.path.join(args.output_dir, "coco.pkl"),
-        )
 
     if args.eval_ok_vqa:
         print("Caching OK-VQA...")
@@ -345,24 +219,6 @@ def main():
         torch.save(
             rices_dataset.features,
             os.path.join(args.output_dir, "textvqa.pkl"),
-        )
-
-    if args.eval_hateful_memes:
-        print("Caching Hateful Memes...")
-        train_dataset = HatefulMemesDataset(
-            image_dir_path=args.hateful_memes_image_dir_path,
-            annotations_path=args.hateful_memes_train_annotations_json_path,
-        )
-        rices_dataset = RICES(
-            train_dataset,
-            device_id,
-            args.batch_size,
-            vision_encoder_path=args.vision_encoder_path,
-            vision_encoder_pretrained=args.vision_encoder_pretrained,
-        )
-        torch.save(
-            rices_dataset.features,
-            os.path.join(args.output_dir, "hateful_memes.pkl"),
         )
 
 
