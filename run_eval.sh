@@ -1,5 +1,5 @@
 #!/bin/bash                   
-#SBATCH --partition="overcap"
+#SBATCH --partition="kira-lab"
 #SBATCH --nodes=1
 #SBATCH --cpus-per-gpu=6
 #SBATCH --gpus-per-node="a40:8"
@@ -38,7 +38,8 @@ srun -u /coc/testnvme/chuang475/miniconda3/envs/lavis_same/bin/python -m torch.d
     --results_file "results.json" \
     --precision amp_bf16 \
     --batch_size 16 \
-    --eval_ok_vqa \
+    --shots 8 16 32 \
+    --eval_vqav2 \
     --vqav2_train_image_dir_path "/srv/datasets/coco/train2014" \
     --vqav2_train_annotations_json_path "/srv/datasets/vqa2.0/v2_mscoco_train2014_annotations.json" \
     --vqav2_train_questions_json_path "/srv/datasets/vqa2.0/v2_OpenEnded_mscoco_train2014_questions.json" \
@@ -62,3 +63,4 @@ srun -u /coc/testnvme/chuang475/miniconda3/envs/lavis_same/bin/python -m torch.d
     --vizwiz_train_annotations_json_path "data/vizwiz/train_annotations_vqa_format.json" \
     --vizwiz_test_questions_json_path "data/vizwiz/val_questions_vqa_format.json" \
     --vizwiz_test_annotations_json_path "data/vizwiz/val_annotations_vqa_format.json" \
+    # --rices \

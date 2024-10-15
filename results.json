@@ -1,1 +1,1 @@
-{"textvqa": [{"shots": 32, "trials": [28.51], "mean": 28.51, "stddev": 0.0}]}
+{"ok_vqa": [{"shots": 0, "trials": [27.76], "mean": 27.76, "stddev": 0.0}, {"shots": 4, "trials": [30.04], "mean": 30.04, "stddev": 0.0}, {"shots": 8, "trials": [30.67], "mean": 30.67, "stddev": 0.0}, {"shots": 16, "trials": [31.15], "mean": 31.15, "stddev": 0.0}, {"shots": 32, "trials": [30.76], "mean": 30.76, "stddev": 0.0}]}

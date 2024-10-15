@@ -77,7 +77,7 @@ class RICES:
             # Get the feature of the input image
             query_feature = self.model.encode_image(inputs)
             query_feature /= query_feature.norm(dim=-1, keepdim=True)
-            query_feature = query_feature.detach().cpu()
+            query_feature = query_feature.detach()
 
             if query_feature.ndim == 1:
                 query_feature = query_feature.unsqueeze(0)

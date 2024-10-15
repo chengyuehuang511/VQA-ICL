@@ -9,7 +9,7 @@
 # singularized by our inflection.singularize.
 import re
 import nltk
-nltk.data.path = ['/coc/pskynet4/chuang475']
+nltk.data.path = ['/nethome/chuang475/nltk_data']
 from nltk.corpus.reader import VERB
 import inflection
 
