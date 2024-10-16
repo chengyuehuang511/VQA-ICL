@@ -4,7 +4,6 @@ from tqdm import tqdm
 import torch
 from utils import custom_collate_fn
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from open_flamingo.src.utils import extend_instance
 
 
 class MMICES:
@@ -162,7 +161,7 @@ class MMICES:
             """
 
         # Return with the most similar images last
-        print("indices", indices)
-        print("selected_text_indices", selected_text_indices)
+        # print("indices", indices)
+        # print("selected_text_indices", selected_text_indices)
         return [[self.dataset[i] for i in reversed(row[selected_text_indices[row_id]])] for row_id, row in enumerate(indices)]
 

@@ -15,6 +15,7 @@ import math
 from eval_datasets import VQADataset
 from rices import RICES
 from mmices import MMICES
+from jices import JICES
 from tqdm import tqdm
 
 from eval_model import BaseEvalModel
@@ -32,6 +33,12 @@ parser.add_argument(
     type=str,
     help="Model name. Currently only `OpenFlamingo` is supported.",
     default="open_flamingo",
+)
+parser.add_argument(
+    "--model_id",
+    type=str,
+    help="Model ID for the model to use for JICES.",
+    default="openflamingo/OpenFlamingo-3B-vitl-mpt1b",
 )
 parser.add_argument(
     "--results_file", type=str, default=None, help="JSON file to save results"
@@ -83,6 +90,11 @@ parser.add_argument(
     "--mmices",
     action="store_true",
     help="Whether to use MMICES for evaluation. If False, uses random demonstrations.",
+)
+parser.add_argument(
+    "--jices",
+    action="store_true",
+    help="Whether to use JICES for evaluation. If False, uses random demonstrations.",
 )
 parser.add_argument(
     "--rices_vision_encoder_path",
@@ -605,6 +617,13 @@ def evaluate_vqa(
             lm_path=args.mmices_lm_path,
             lm_tokenizer_path=args.mmices_lm_tokenizer_path,
         )
+    elif args.jices:
+        rices_dataset = JICES(
+            train_dataset,
+            eval_model.device,
+            args.batch_size,
+            eval_model=eval_model,
+        )
     else:
         query_set = utils.get_query_set(train_dataset, args.query_set_size)
 
@@ -619,6 +638,8 @@ def evaluate_vqa(
             batch_demo_samples = rices_dataset.find(batch["image"], effective_num_shots)
         elif args.mmices:
             batch_demo_samples = rices_dataset.find(batch, effective_num_shots, K=200)
+        elif args.jices:
+            batch_demo_samples = rices_dataset.find(batch, effective_num_shots)
         else:
             batch_demo_samples = utils.sample_batch_demos_from_query_set(
                 query_set, effective_num_shots, len(batch["image"])

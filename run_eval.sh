@@ -19,7 +19,22 @@ export PYTHONFAULTHANDLER=1
 export CUDA_LAUNCH_BLOCKING=0
 export HOSTNAMES=`scontrol show hostnames "$SLURM_JOB_NODELIST"`
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
-export MASTER_PORT=$(shuf -i 0-65535 -n 1)
+
+# export MASTER_PORT=$(shuf -i 0-65535 -n 1)
+# Loop until we find an unused port
+while :
+do
+    MASTER_PORT=$(shuf -i 1024-65535 -n 1)  # Randomly choose a port between 1024 and 65535
+    # Check if the port is in use
+    if ! lsof -i :$MASTER_PORT > /dev/null; then
+        export MASTER_PORT
+        echo "Selected available port: $MASTER_PORT"
+        break
+    else
+        echo "Port $MASTER_PORT is already in use. Trying another..."
+    fi
+done
+
 export COUNT_NODE=`scontrol show hostnames "$SLURM_JOB_NODELIST" | wc -l`
 
 echo go $COUNT_NODE
@@ -34,12 +49,13 @@ srun -u /coc/testnvme/chuang475/miniconda3/envs/lavis_same/bin/python -m torch.d
     --lm_path anas-awadalla/mpt-1b-redpajama-200b \
     --lm_tokenizer_path anas-awadalla/mpt-1b-redpajama-200b \
     --cross_attn_every_n_layers 1 \
+    --model_id "openflamingo/OpenFlamingo-3B-vitl-mpt1b" \
     --checkpoint_path "/nethome/chuang475/flash/.cache/huggingface/hub/models--openflamingo--OpenFlamingo-3B-vitl-mpt1b/snapshots/ed3a0c3190b2fc2d1c39630738896d4e73ce1bbc/checkpoint.pt" \
     --results_file "results.json" \
     --precision amp_bf16 \
-    --batch_size 16 \
-    --shots 4 8 16 32 \
-    --eval_ok_vqa \
+    --shots 32 \
+    --batch_size 8 \
+    --eval_vizwiz \
     --vqav2_train_image_dir_path "/srv/datasets/coco/train2014" \
     --vqav2_train_annotations_json_path "/srv/datasets/vqa2.0/v2_mscoco_train2014_annotations.json" \
     --vqav2_train_questions_json_path "/srv/datasets/vqa2.0/v2_OpenEnded_mscoco_train2014_questions.json" \
@@ -65,3 +81,4 @@ srun -u /coc/testnvme/chuang475/miniconda3/envs/lavis_same/bin/python -m torch.d
     --vizwiz_test_annotations_json_path "data/vizwiz/val_annotations_vqa_format.json" \
     --mmices
     # --rices \
+    # --mmices

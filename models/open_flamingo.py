@@ -261,6 +261,7 @@ class EvalModel(BaseEvalModel):
         past_key_values: torch.Tensor = None,
         clear_conditioned_layers: bool = False,
         use_cache: bool = False,
+        output_hidden_states: bool = False,
     ):
         """
         Calls the forward function of the model.
@@ -280,6 +281,7 @@ class EvalModel(BaseEvalModel):
                         clear_conditioned_layers=clear_conditioned_layers,
                         past_key_values=past_key_values,
                         use_cache=use_cache,
+                        output_hidden_states=output_hidden_states,
                     )
             return outputs
 
@@ -301,6 +303,7 @@ class EvalModel(BaseEvalModel):
                         clear_conditioned_layers=False,
                         past_key_values=past_key_values,
                         use_cache=True,
+                        output_hidden_states=output_hidden_states,
                     )
 
             past_key_values = outputs.past_key_values
