@@ -14,6 +14,7 @@ import math
 
 from eval_datasets import VQADataset
 from rices import RICES
+from mmices import MMICES
 from tqdm import tqdm
 
 from eval_model import BaseEvalModel
@@ -79,6 +80,11 @@ parser.add_argument(
     help="Whether to use RICES for evaluation. If False, uses random demonstrations.",
 )
 parser.add_argument(
+    "--mmices",
+    action="store_true",
+    help="Whether to use MMICES for evaluation. If False, uses random demonstrations.",
+)
+parser.add_argument(
     "--rices_vision_encoder_path",
     default="ViT-L-14",
     type=str,
@@ -89,6 +95,30 @@ parser.add_argument(
     default="openai",
     type=str,
     help="CLIP vision encoder to use for RICES if cached_demonstration_features is None.",
+)
+parser.add_argument(
+    "--mmices_vision_encoder_path",
+    default="ViT-L-14",
+    type=str,
+    help="CLIP vision encoder to use for MMICES if cached_demonstration_features is None.",
+)
+parser.add_argument(
+    "--mmices_vision_encoder_pretrained",
+    default="openai",
+    type=str,
+    help="CLIP vision encoder to use for MMICES if cached_demonstration_features is None.",
+)
+parser.add_argument(
+    "--mmices_lm_path",
+    default="anas-awadalla/mpt-1b-redpajama-200b",
+    type=str,
+    help="Language model to use for MMICES if cached_demonstration_features is None.",
+)
+parser.add_argument(
+    "--mmices_lm_tokenizer_path",
+    default="anas-awadalla/mpt-1b-redpajama-200b",
+    type=str,
+    help="Language model to use for MMICES if cached_demonstration_features is None.",
 )
 parser.add_argument(
     "--cached_demonstration_features",
@@ -565,6 +595,16 @@ def evaluate_vqa(
             vision_encoder_path=args.rices_vision_encoder_path,
             vision_encoder_pretrained=args.rices_vision_encoder_pretrained,
         )
+    elif args.mmices:
+        rices_dataset = MMICES(
+            train_dataset,
+            eval_model.device,
+            args.batch_size,
+            vision_encoder_path=args.mmices_vision_encoder_path,
+            vision_encoder_pretrained=args.mmices_vision_encoder_pretrained,
+            lm_path=args.mmices_lm_path,
+            lm_tokenizer_path=args.mmices_lm_tokenizer_path,
+        )
     else:
         query_set = utils.get_query_set(train_dataset, args.query_set_size)
 
@@ -577,6 +617,8 @@ def evaluate_vqa(
     ):
         if args.rices:
             batch_demo_samples = rices_dataset.find(batch["image"], effective_num_shots)
+        elif args.mmices:
+            batch_demo_samples = rices_dataset.find(batch, effective_num_shots, K=200)
         else:
             batch_demo_samples = utils.sample_batch_demos_from_query_set(
                 query_set, effective_num_shots, len(batch["image"])
