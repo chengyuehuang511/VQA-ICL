@@ -1,10 +1,9 @@
 #!/bin/bash                   
 #SBATCH --partition="overcap"
 #SBATCH --nodes=1
-#SBATCH --cpus-per-gpu=6
+#SBATCH --cpus-per-gpu=16
 #SBATCH --gpus-per-node="a40:2"
 #SBATCH --qos="short"
-#SBATCH -x shakey,nestor,voltron,chappie,puma,randotron,cheetah,baymax,tachikoma,uniblab,major,optimistprime,hk47,xaea-12,dave,crushinator,kitt
 #SBATCH --mem-per-gpu=45G
 
 <<com
@@ -53,9 +52,9 @@ srun -u /coc/testnvme/chuang475/miniconda3/envs/lavis_same/bin/python -m torch.d
     --checkpoint_path "/nethome/chuang475/flash/.cache/huggingface/hub/models--openflamingo--OpenFlamingo-3B-vitl-mpt1b/snapshots/ed3a0c3190b2fc2d1c39630738896d4e73ce1bbc/checkpoint.pt" \
     --results_file "results.json" \
     --precision amp_bf16 \
-    --shots 32 \
     --batch_size 8 \
-    --eval_vizwiz \
+    --eval_ok_vqa \
+    --train_dataset_name textvqa \
     --vqav2_train_image_dir_path "/srv/datasets/coco/train2014" \
     --vqav2_train_annotations_json_path "/srv/datasets/vqa2.0/v2_mscoco_train2014_annotations.json" \
     --vqav2_train_questions_json_path "/srv/datasets/vqa2.0/v2_OpenEnded_mscoco_train2014_questions.json" \
@@ -79,6 +78,6 @@ srun -u /coc/testnvme/chuang475/miniconda3/envs/lavis_same/bin/python -m torch.d
     --vizwiz_train_annotations_json_path "data/vizwiz/train_annotations_vqa_format.json" \
     --vizwiz_test_questions_json_path "data/vizwiz/val_questions_vqa_format.json" \
     --vizwiz_test_annotations_json_path "data/vizwiz/val_annotations_vqa_format.json" \
-    --mmices
+    # --mmices
     # --rices \
     # --mmices

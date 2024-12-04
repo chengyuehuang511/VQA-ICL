@@ -82,19 +82,11 @@ parser.add_argument(
     help="Whether to use prompt ensembling (average log-likelihoods over permutations of in-context examples)",
 )
 parser.add_argument(
-    "--rices",
-    action="store_true",
-    help="Whether to use RICES for evaluation. If False, uses random demonstrations.",
-)
-parser.add_argument(
-    "--mmices",
-    action="store_true",
-    help="Whether to use MMICES for evaluation. If False, uses random demonstrations.",
-)
-parser.add_argument(
-    "--jices",
-    action="store_true",
-    help="Whether to use JICES for evaluation. If False, uses random demonstrations.",
+    "--embedding_selection",
+    type=str,
+    default=None,
+    choices=["rices", "mmices", "jices"],
+    help="Which embedding selection method to use.",
 )
 parser.add_argument(
     "--rices_vision_encoder_path",
@@ -134,7 +126,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--cached_demonstration_features",
-    default=None,
+    default="/coc/testnvme/chuang475/projects/VQA-ICL/cache",
     help="Directory where rices features for all choices of in-context examples are stored as a pkl file with the dataset name. If None, features are re-computed by script.",
 )
 
@@ -162,6 +154,13 @@ parser.add_argument(
     action="store_true",
     default=False,
     help="Whether to evaluate on TextVQA.",
+)
+
+parser.add_argument(
+    "--train_dataset_name",
+    type=str,
+    default=None,
+    help="Name of the dataset to use for training the model.",
 )
 
 # Dataset arguments
@@ -363,12 +362,7 @@ def main():
         print("Evaluating on OK-VQA...")
 
         # load cached demonstration features for RICES
-        if args.cached_demonstration_features is not None:
-            cached_features = torch.load(
-                f"{args.cached_demonstration_features}/ok_vqa.pkl", map_location="cpu"
-            )
-        else:
-            cached_features = None
+        cached_features_path = f"{args.cached_demonstration_features}/{args.embedding_selection}/ok_vqa.pkl"
 
         for shot in args.shots:
             scores = []
@@ -379,7 +373,8 @@ def main():
                     num_shots=shot,
                     seed=seed,
                     dataset_name="ok_vqa",
-                    cached_features=cached_features,
+                    cached_features_path=cached_features_path,
+                    train_dataset_name=args.train_dataset_name,
                 )
                 if args.rank == 0:
                     print(f"Shots {shot} Trial {trial} OK-VQA score: {ok_vqa_score}")
@@ -400,12 +395,7 @@ def main():
         print("Evaluating on VQAv2...")
 
         # load cached demonstration features for RICES
-        if args.cached_demonstration_features is not None:
-            cached_features = torch.load(
-                f"{args.cached_demonstration_features}/vqav2.pkl", map_location="cpu"
-            )
-        else:
-            cached_features = None
+        cached_features_path = f"{args.cached_demonstration_features}/{args.embedding_selection}/vqav2.pkl"
 
         for shot in args.shots:
             scores = []
@@ -416,7 +406,8 @@ def main():
                     num_shots=shot,
                     seed=seed,
                     dataset_name="vqav2",
-                    cached_features=cached_features,
+                    cached_features_path=cached_features_path,
+                    train_dataset_name=args.train_dataset_name,
                 )
                 if args.rank == 0 and vqa_score is not None:
                     print(f"Shots {shot} Trial {trial} VQA score: {vqa_score}")
@@ -437,12 +428,7 @@ def main():
         print("Evaluating on VizWiz...")
 
         # load cached demonstration features for RICES
-        if args.cached_demonstration_features is not None:
-            cached_features = torch.load(
-                f"{args.cached_demonstration_features}/vizwiz.pkl", map_location="cpu"
-            )
-        else:
-            cached_features = None
+        cached_features_path = f"{args.cached_demonstration_features}/{args.embedding_selection}/vizwiz.pkl"
 
         for shot in args.shots:
             scores = []
@@ -453,7 +439,8 @@ def main():
                     num_shots=shot,
                     seed=seed,
                     dataset_name="vizwiz",
-                    cached_features=cached_features,
+                    cached_features_path=cached_features_path,
+                    train_dataset_name=args.train_dataset_name,
                 )
                 if args.rank == 0 and vizwiz_score is not None:
                     print(f"Shots {shot} Trial {trial} VizWiz score: {vizwiz_score}")
@@ -474,24 +461,20 @@ def main():
         print("Evaluating on TextVQA...")
 
         # load cached demonstration features for RICES
-        if args.cached_demonstration_features is not None:
-            cached_features = torch.load(
-                f"{args.cached_demonstration_features}/textvqa.pkl", map_location="cpu"
-            )
-        else:
-            cached_features = None
+        cached_features_path = f"{args.cached_demonstration_features}/{args.embedding_selection}/textvqa.pkl"
 
         for shot in args.shots:
             scores = []
             for seed, trial in zip(args.trial_seeds, range(args.num_trials)):
-                textvqa_score = evaluate_vqa(
+                textvqa_score = evaluate_vqa(  # cached_features
                     args=args,
                     eval_model=eval_model,
                     num_shots=shot,
                     seed=seed,
                     dataset_name="textvqa",
                     max_generation_length=10,
-                    cached_features=cached_features,
+                    cached_features_path=cached_features_path,
+                    train_dataset_name=args.train_dataset_name,
                 )
                 if args.rank == 0:
                     print(f"Shots {shot} Trial {trial} TextVQA score: {textvqa_score}")
@@ -523,7 +506,8 @@ def evaluate_vqa(
     length_penalty: float = 0.0,
     num_shots: int = 8,
     dataset_name: str = "vqav2",
-    cached_features=None,
+    train_dataset_name=None,
+    cached_features_path=None,
 ):
     """
     Evaluate a model on VQA datasets. Currently supports VQA v2.0, OK-VQA, VizWiz and TextVQA.
@@ -543,42 +527,76 @@ def evaluate_vqa(
     """
 
     if dataset_name == "ok_vqa":
-        train_image_dir_path = args.ok_vqa_train_image_dir_path
-        train_questions_json_path = args.ok_vqa_train_questions_json_path
-        train_annotations_json_path = args.ok_vqa_train_annotations_json_path
+        # train_image_dir_path = args.ok_vqa_train_image_dir_path
+        # train_questions_json_path = args.ok_vqa_train_questions_json_path
+        # train_annotations_json_path = args.ok_vqa_train_annotations_json_path
         test_image_dir_path = args.ok_vqa_test_image_dir_path
         test_questions_json_path = args.ok_vqa_test_questions_json_path
         test_annotations_json_path = args.ok_vqa_test_annotations_json_path
     elif dataset_name == "vqav2":
-        train_image_dir_path = args.vqav2_train_image_dir_path
-        train_questions_json_path = args.vqav2_train_questions_json_path
-        train_annotations_json_path = args.vqav2_train_annotations_json_path
+        # train_image_dir_path = args.vqav2_train_image_dir_path
+        # train_questions_json_path = args.vqav2_train_questions_json_path
+        # train_annotations_json_path = args.vqav2_train_annotations_json_path
         test_image_dir_path = args.vqav2_test_image_dir_path
         test_questions_json_path = args.vqav2_test_questions_json_path
         test_annotations_json_path = args.vqav2_test_annotations_json_path
     elif dataset_name == "vizwiz":
-        train_image_dir_path = args.vizwiz_train_image_dir_path
-        train_questions_json_path = args.vizwiz_train_questions_json_path
-        train_annotations_json_path = args.vizwiz_train_annotations_json_path
+        # train_image_dir_path = args.vizwiz_train_image_dir_path
+        # train_questions_json_path = args.vizwiz_train_questions_json_path
+        # train_annotations_json_path = args.vizwiz_train_annotations_json_path
         test_image_dir_path = args.vizwiz_test_image_dir_path
         test_questions_json_path = args.vizwiz_test_questions_json_path
         test_annotations_json_path = args.vizwiz_test_annotations_json_path
     elif dataset_name == "textvqa":
-        train_image_dir_path = args.textvqa_image_dir_path
-        train_questions_json_path = args.textvqa_train_questions_json_path
-        train_annotations_json_path = args.textvqa_train_annotations_json_path
+        # train_image_dir_path = args.textvqa_image_dir_path
+        # train_questions_json_path = args.textvqa_train_questions_json_path
+        # train_annotations_json_path = args.textvqa_train_annotations_json_path
         test_image_dir_path = args.textvqa_image_dir_path
         test_questions_json_path = args.textvqa_test_questions_json_path
         test_annotations_json_path = args.textvqa_test_annotations_json_path
     else:
         raise ValueError(f"Unsupported dataset: {dataset_name}")
 
+    if train_dataset_name is None:
+        train_dataset_name = dataset_name
+
+    if train_dataset_name == "ok_vqa":
+        train_image_dir_path = args.ok_vqa_train_image_dir_path
+        train_questions_json_path = args.ok_vqa_train_questions_json_path
+        train_annotations_json_path = args.ok_vqa_train_annotations_json_path
+        # test_image_dir_path = args.ok_vqa_test_image_dir_path
+        # test_questions_json_path = args.ok_vqa_test_questions_json_path
+        # test_annotations_json_path = args.ok_vqa_test_annotations_json_path
+    elif train_dataset_name == "vqav2":
+        train_image_dir_path = args.vqav2_train_image_dir_path
+        train_questions_json_path = args.vqav2_train_questions_json_path
+        train_annotations_json_path = args.vqav2_train_annotations_json_path
+        # test_image_dir_path = args.vqav2_test_image_dir_path
+        # test_questions_json_path = args.vqav2_test_questions_json_path
+        # test_annotations_json_path = args.vqav2_test_annotations_json_path
+    elif train_dataset_name == "vizwiz":
+        train_image_dir_path = args.vizwiz_train_image_dir_path
+        train_questions_json_path = args.vizwiz_train_questions_json_path
+        train_annotations_json_path = args.vizwiz_train_annotations_json_path
+        # test_image_dir_path = args.vizwiz_test_image_dir_path
+        # test_questions_json_path = args.vizwiz_test_questions_json_path
+        # test_annotations_json_path = args.vizwiz_test_annotations_json_path
+    elif train_dataset_name == "textvqa":
+        train_image_dir_path = args.textvqa_image_dir_path
+        train_questions_json_path = args.textvqa_train_questions_json_path
+        train_annotations_json_path = args.textvqa_train_annotations_json_path
+        # test_image_dir_path = args.textvqa_image_dir_path
+        # test_questions_json_path = args.textvqa_test_questions_json_path
+        # test_annotations_json_path = args.textvqa_test_annotations_json_path
+    else:
+        raise ValueError(f"Unsupported dataset: {train_dataset_name}")
+
     train_dataset = VQADataset(
         image_dir_path=train_image_dir_path,
         question_path=train_questions_json_path,
         annotations_path=train_annotations_json_path,
         is_train=True,
-        dataset_name=dataset_name,
+        dataset_name=train_dataset_name,
     )
 
     test_dataset = VQADataset(
@@ -598,30 +616,32 @@ def evaluate_vqa(
         args.batch_size,
     )
 
-    if args.rices:
+    if args.embedding_selection == "rices":
         rices_dataset = RICES(
             train_dataset,
             eval_model.device,
             args.batch_size,
-            cached_features=cached_features,
+            cached_features_path=cached_features_path,
             vision_encoder_path=args.rices_vision_encoder_path,
             vision_encoder_pretrained=args.rices_vision_encoder_pretrained,
         )
-    elif args.mmices:
+    elif args.embedding_selection == "mmices":
         rices_dataset = MMICES(
             train_dataset,
             eval_model.device,
             args.batch_size,
+            cached_features_path=cached_features_path,
             vision_encoder_path=args.mmices_vision_encoder_path,
             vision_encoder_pretrained=args.mmices_vision_encoder_pretrained,
             lm_path=args.mmices_lm_path,
             lm_tokenizer_path=args.mmices_lm_tokenizer_path,
         )
-    elif args.jices:
+    elif args.embedding_selection == "jices":
         rices_dataset = JICES(
             train_dataset,
             eval_model.device,
             args.batch_size,
+            cached_features_path=cached_features_path,
             eval_model=eval_model,
         )
     else:
@@ -634,11 +654,11 @@ def evaluate_vqa(
         desc=f"Running inference {dataset_name}",
         disable=args.rank != 0,
     ):
-        if args.rices:
+        if args.embedding_selection == "rices":
             batch_demo_samples = rices_dataset.find(batch["image"], effective_num_shots)
-        elif args.mmices:
+        elif args.embedding_selection == "mmices":
             batch_demo_samples = rices_dataset.find(batch, effective_num_shots, K=200)
-        elif args.jices:
+        elif args.embedding_selection == "jices":
             batch_demo_samples = rices_dataset.find(batch, effective_num_shots)
         else:
             batch_demo_samples = utils.sample_batch_demos_from_query_set(

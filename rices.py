@@ -3,6 +3,7 @@ import torch
 from tqdm import tqdm
 import torch
 from utils import custom_collate_fn
+import os
 
 
 class RICES:
@@ -13,7 +14,7 @@ class RICES:
         batch_size,
         vision_encoder_path="ViT-B-32",
         vision_encoder_pretrained="openai",
-        cached_features=None,
+        cached_features_path=None,
     ):
         self.dataset = dataset
         self.device = device
@@ -28,10 +29,13 @@ class RICES:
         self.image_processor = image_processor
 
         # Precompute features
-        if cached_features is None:
-            self.features = self._precompute_features()
+        if os.path.exists(cached_features_path):
+            self.features = torch.load(
+                cached_features_path, map_location="cpu"
+            )
         else:
-            self.features = cached_features
+            self.features = self._precompute_features()
+            torch.save(self.features, cached_features_path)
 
     def _precompute_features(self):
         features = []

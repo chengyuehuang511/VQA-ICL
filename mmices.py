@@ -4,6 +4,7 @@ from tqdm import tqdm
 import torch
 from utils import custom_collate_fn
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import os
 
 
 class MMICES:
@@ -16,7 +17,7 @@ class MMICES:
         vision_encoder_pretrained="openai",
         lm_path="anas-awadalla/mpt-1b-redpajama-200b",
         lm_tokenizer_path="anas-awadalla/mpt-1b-redpajama-200b",
-        cached_features=None,
+        cached_features_path=None,
     ):
         self.dataset = dataset
         self.device = device
@@ -51,10 +52,17 @@ class MMICES:
         self.tokenizer = text_tokenizer
 
         # Precompute features
-        if cached_features is None:
-            self.features, self.lang_features = self._precompute_features()
+        if os.path.exists(cached_features_path):
+            self.features = torch.load(
+                cached_features_path, map_location="cpu"
+            )
+            self.features = self.features["features"]
+            self.lang_features = self.features["lang_features"]
         else:
-            self.features = cached_features
+            self.features, self.lang_features = self._precompute_features()
+            torch.save(
+                {"features": self.features, "lang_features": self.lang_features}, 
+                cached_features_path)
 
     def _precompute_features(self):
         features = []
