@@ -5,7 +5,7 @@ import torch
 from einops import repeat
 
 from open_flamingo.eval.eval_model import BaseEvalModel
-from open_flamingo.src.factory import create_model_and_transforms
+from models.factory import create_model_and_transforms
 from open_flamingo.eval.utils import unwrap_model, get_autocast, get_cast_dtype
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
