@@ -21,7 +21,6 @@ from tqdm import tqdm
 from eval_model import BaseEvalModel
 
 from ok_vqa_utils import postprocess_ok_vqa_generation
-from open_flamingo.src.flamingo import Flamingo
 from vqa_metric import compute_vqa_accuracy, postprocess_vqa_generation
 
 from open_flamingo.train.distributed import init_distributed_device, world_info_from_env
@@ -131,36 +130,43 @@ parser.add_argument(
 )
 
 # Per-dataset evaluation flags
-parser.add_argument(
-    "--eval_vqav2",
-    action="store_true",
-    default=False,
-    help="Whether to evaluate on VQAV2.",
-)
-parser.add_argument(
-    "--eval_ok_vqa",
-    action="store_true",
-    default=False,
-    help="Whether to evaluate on OK-VQA.",
-)
-parser.add_argument(
-    "--eval_vizwiz",
-    action="store_true",
-    default=False,
-    help="Whether to evaluate on VizWiz.",
-)
-parser.add_argument(
-    "--eval_textvqa",
-    action="store_true",
-    default=False,
-    help="Whether to evaluate on TextVQA.",
-)
+# parser.add_argument(
+#     "--eval_vqav2",
+#     action="store_true",
+#     default=False,
+#     help="Whether to evaluate on VQAV2.",
+# )
+# parser.add_argument(
+#     "--eval_ok_vqa",
+#     action="store_true",
+#     default=False,
+#     help="Whether to evaluate on OK-VQA.",
+# )
+# parser.add_argument(
+#     "--eval_vizwiz",
+#     action="store_true",
+#     default=False,
+#     help="Whether to evaluate on VizWiz.",
+# )
+# parser.add_argument(
+#     "--eval_textvqa",
+#     action="store_true",
+#     default=False,
+#     help="Whether to evaluate on TextVQA.",
+# )
 
 parser.add_argument(
     "--train_dataset_name",
     type=str,
     default=None,
     help="Name of the dataset to use for training the model.",
+)
+
+parser.add_argument(
+    "--test_dataset_name",
+    type=str,
+    default=None,
+    help="Name of the dataset to use for evaluating the model.",
 )
 
 # Dataset arguments
@@ -348,7 +354,8 @@ def main():
     args.local_rank, args.rank, args.world_size = world_info_from_env()
     device_id = init_distributed_device(args)
     eval_model.set_device(device_id)
-    eval_model.init_distributed()
+    eval_model.init_distributed()  # DDP
+    print("Device ID: ", eval_model.device)
 
     if args.model != "open_flamingo" and args.shots != [0]:
         raise ValueError("Only 0 shot eval is supported for non-open_flamingo models")
@@ -358,138 +365,33 @@ def main():
 
     results = defaultdict(list)
 
-    if args.eval_ok_vqa:
-        print("Evaluating on OK-VQA...")
+    print(f"Support Set: {args.train_dataset_name}, Query Set: {args.test_dataset_name}")
 
-        # load cached demonstration features for RICES
-        cached_features_path = f"{args.cached_demonstration_features}/{args.embedding_selection}/ok_vqa.pkl"
-
-        for shot in args.shots:
-            scores = []
-            for seed, trial in zip(args.trial_seeds, range(args.num_trials)):
-                ok_vqa_score = evaluate_vqa(
-                    args=args,
-                    eval_model=eval_model,
-                    num_shots=shot,
-                    seed=seed,
-                    dataset_name="ok_vqa",
-                    cached_features_path=cached_features_path,
-                    train_dataset_name=args.train_dataset_name,
-                )
-                if args.rank == 0:
-                    print(f"Shots {shot} Trial {trial} OK-VQA score: {ok_vqa_score}")
-                    scores.append(ok_vqa_score)
-
+    for shot in args.shots:
+        scores = []
+        for seed, trial in zip(args.trial_seeds, range(args.num_trials)):
+            score = evaluate_vqa(
+                args=args,
+                eval_model=eval_model,
+                num_shots=shot,
+                seed=seed,
+                dataset_name=args.test_dataset_name,
+                train_dataset_name=args.train_dataset_name,
+            )
             if args.rank == 0:
-                print(f"Shots {shot} Mean OK-VQA score: {np.nanmean(scores)}")
-                results["ok_vqa"].append(
-                    {
-                        "shots": shot,
-                        "trials": scores,
-                        "mean": np.nanmean(scores),
-                        "stddev": np.nanstd(scores),
-                    }
-                )
+                print(f"Shots {shot} Trial {trial} {args.test_dataset_name} score: {score}")
+                scores.append(score)
 
-    if args.eval_vqav2:
-        print("Evaluating on VQAv2...")
-
-        # load cached demonstration features for RICES
-        cached_features_path = f"{args.cached_demonstration_features}/{args.embedding_selection}/vqav2.pkl"
-
-        for shot in args.shots:
-            scores = []
-            for seed, trial in zip(args.trial_seeds, range(args.num_trials)):
-                vqa_score = evaluate_vqa(
-                    args=args,
-                    eval_model=eval_model,
-                    num_shots=shot,
-                    seed=seed,
-                    dataset_name="vqav2",
-                    cached_features_path=cached_features_path,
-                    train_dataset_name=args.train_dataset_name,
-                )
-                if args.rank == 0 and vqa_score is not None:
-                    print(f"Shots {shot} Trial {trial} VQA score: {vqa_score}")
-                    scores.append(vqa_score)
-
-            if args.rank == 0 and len(scores) > 0:
-                print(f"Shots {shot} Mean VQA score: {np.nanmean(scores)}")
-                results["vqav2"].append(
-                    {
-                        "shots": shot,
-                        "trials": scores,
-                        "mean": np.nanmean(scores),
-                        "stddev": np.nanstd(scores),
-                    }
-                )
-
-    if args.eval_vizwiz:
-        print("Evaluating on VizWiz...")
-
-        # load cached demonstration features for RICES
-        cached_features_path = f"{args.cached_demonstration_features}/{args.embedding_selection}/vizwiz.pkl"
-
-        for shot in args.shots:
-            scores = []
-            for seed, trial in zip(args.trial_seeds, range(args.num_trials)):
-                vizwiz_score = evaluate_vqa(
-                    args=args,
-                    eval_model=eval_model,
-                    num_shots=shot,
-                    seed=seed,
-                    dataset_name="vizwiz",
-                    cached_features_path=cached_features_path,
-                    train_dataset_name=args.train_dataset_name,
-                )
-                if args.rank == 0 and vizwiz_score is not None:
-                    print(f"Shots {shot} Trial {trial} VizWiz score: {vizwiz_score}")
-                    scores.append(vizwiz_score)
-
-            if args.rank == 0 and len(scores) > 0:
-                print(f"Shots {shot} Mean VizWiz score: {np.nanmean(scores)}")
-                results["vizwiz"].append(
-                    {
-                        "shots": shot,
-                        "trials": scores,
-                        "mean": np.nanmean(scores),
-                        "stddev": np.nanstd(scores),
-                    }
-                )
-
-    if args.eval_textvqa:
-        print("Evaluating on TextVQA...")
-
-        # load cached demonstration features for RICES
-        cached_features_path = f"{args.cached_demonstration_features}/{args.embedding_selection}/textvqa.pkl"
-
-        for shot in args.shots:
-            scores = []
-            for seed, trial in zip(args.trial_seeds, range(args.num_trials)):
-                textvqa_score = evaluate_vqa(  # cached_features
-                    args=args,
-                    eval_model=eval_model,
-                    num_shots=shot,
-                    seed=seed,
-                    dataset_name="textvqa",
-                    max_generation_length=10,
-                    cached_features_path=cached_features_path,
-                    train_dataset_name=args.train_dataset_name,
-                )
-                if args.rank == 0:
-                    print(f"Shots {shot} Trial {trial} TextVQA score: {textvqa_score}")
-                    scores.append(textvqa_score)
-
-            if args.rank == 0:
-                print(f"Shots {shot} Mean TextVQA score: {np.nanmean(scores)}")
-                results["textvqa"].append(
-                    {
-                        "shots": shot,
-                        "trials": scores,
-                        "mean": np.nanmean(scores),
-                        "stddev": np.nanstd(scores),
-                    }
-                )
+        if args.rank == 0:
+            print(f"Shots {shot} Mean {args.test_dataset_name} score: {np.nanmean(scores)}")
+            results[args.test_dataset_name].append(
+                {
+                    "shots": shot,
+                    "trials": scores,
+                    "mean": np.nanmean(scores),
+                    "stddev": np.nanstd(scores),
+                }
+            )
 
     if args.rank == 0 and args.results_file is not None:
         with open(args.results_file, "w") as f:
@@ -507,7 +409,6 @@ def evaluate_vqa(
     num_shots: int = 8,
     dataset_name: str = "vqav2",
     train_dataset_name=None,
-    cached_features_path=None,
 ):
     """
     Evaluate a model on VQA datasets. Currently supports VQA v2.0, OK-VQA, VizWiz and TextVQA.
@@ -559,6 +460,9 @@ def evaluate_vqa(
 
     if train_dataset_name is None:
         train_dataset_name = dataset_name
+
+    cached_features_path = f"{args.cached_demonstration_features}/{args.embedding_selection}/train/{train_dataset_name}.pkl"
+    query_cached_features_path = f"{args.cached_demonstration_features}/{args.embedding_selection}/test/{dataset_name}.pkl"
 
     if train_dataset_name == "ok_vqa":
         train_image_dir_path = args.ok_vqa_train_image_dir_path
@@ -615,6 +519,9 @@ def evaluate_vqa(
         args.num_samples if args.num_samples > 0 else len(test_dataset),
         args.batch_size,
     )
+    # for batch in test_dataloader:
+    #     print("rank in main", args.rank)
+    #     print("len(batch['image'])", len(batch["image"]))
 
     if args.embedding_selection == "rices":
         rices_dataset = RICES(
@@ -624,6 +531,8 @@ def evaluate_vqa(
             cached_features_path=cached_features_path,
             vision_encoder_path=args.rices_vision_encoder_path,
             vision_encoder_pretrained=args.rices_vision_encoder_pretrained,
+            query_dataset=test_dataset,
+            query_cached_features_path=query_cached_features_path,
         )
     elif args.embedding_selection == "mmices":
         rices_dataset = MMICES(
@@ -655,7 +564,7 @@ def evaluate_vqa(
         disable=args.rank != 0,
     ):
         if args.embedding_selection == "rices":
-            batch_demo_samples = rices_dataset.find(batch["image"], effective_num_shots)
+            batch_demo_samples = rices_dataset.find(batch, effective_num_shots)
         elif args.embedding_selection == "mmices":
             batch_demo_samples = rices_dataset.find(batch, effective_num_shots, K=200)
         elif args.embedding_selection == "jices":

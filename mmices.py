@@ -56,8 +56,8 @@ class MMICES:
             self.features = torch.load(
                 cached_features_path, map_location="cpu"
             )
-            self.features = self.features["features"]
             self.lang_features = self.features["lang_features"]
+            self.features = self.features["features"]
         else:
             self.features, self.lang_features = self._precompute_features()
             torch.save(

@@ -53,4 +53,5 @@ class VQADataset(Dataset):
         if self.answers is not None:
             answers = self.answers[idx]
             results["answers"] = [a["answer"] for a in answers["answers"]]
+        results["idx"] = idx
         return results
