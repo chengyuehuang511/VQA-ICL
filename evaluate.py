@@ -544,6 +544,8 @@ def evaluate_vqa(
             vision_encoder_pretrained=args.mmices_vision_encoder_pretrained,
             lm_path=args.mmices_lm_path,
             lm_tokenizer_path=args.mmices_lm_tokenizer_path,
+            query_dataset=test_dataset,
+            query_cached_features_path=query_cached_features_path,
         )
     elif args.embedding_selection == "jices":
         rices_dataset = JICES(
@@ -552,6 +554,8 @@ def evaluate_vqa(
             args.batch_size,
             cached_features_path=cached_features_path,
             eval_model=eval_model,
+            query_dataset=test_dataset,
+            query_cached_features_path=query_cached_features_path,
         )
     else:
         query_set = utils.get_query_set(train_dataset, args.query_set_size)

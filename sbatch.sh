@@ -1,9 +1,9 @@
 #!/bin/bash
 cd /coc/testnvme/chuang475/projects/VQA-ICL
 name="run_eval"
-embedding_selection="rices"
+embedding_selection="jices"
 
-for dataset_name in "ok_vqa" #"vqav2" "ok_vqa" "textvqa" "vizwiz"
+for dataset_name in "vqav2"
 do
     job_name="${name}_$(date +%Y%m%d_%H%M%S)"
     output_dir="output/${job_name}"

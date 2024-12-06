@@ -1,11 +1,12 @@
 import open_clip
 import torch
 from tqdm import tqdm
-import torch
-from utils import custom_collate_fn
+import utils
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import os
-
+from open_flamingo.train.distributed import init_distributed_device, world_info_from_env
+from torch.nn.parallel import DistributedDataParallel as DDP
+from open_flamingo.eval.utils import unwrap_model
 
 class MMICES:
     def __init__(
@@ -18,10 +19,18 @@ class MMICES:
         lm_path="anas-awadalla/mpt-1b-redpajama-200b",
         lm_tokenizer_path="anas-awadalla/mpt-1b-redpajama-200b",
         cached_features_path=None,
+        query_dataset=None,
+        query_cached_features_path=None,
     ):
         self.dataset = dataset
+        self.query_dataset = query_dataset
         self.device = device
         self.batch_size = batch_size
+
+        self.query_cached_features_path = query_cached_features_path
+        self.cached_features_path = cached_features_path
+
+        self.local_rank, self.rank, self.world_size = world_info_from_env()
 
         # Load the vision model and processor
         vision_encoder, _, image_processor = open_clip.create_model_and_transforms(
@@ -59,26 +68,58 @@ class MMICES:
             self.lang_features = self.features["lang_features"]
             self.features = self.features["features"]
         else:
-            self.features, self.lang_features = self._precompute_features()
-            torch.save(
-                {"features": self.features, "lang_features": self.lang_features}, 
-                cached_features_path)
+            self.features, self.lang_features = self._precompute_features(dataset)
+            if self.rank == 0:
+                os.makedirs(os.path.dirname(cached_features_path), exist_ok=True)
+                torch.save(
+                    {"features": self.features, "lang_features": self.lang_features}, 
+                    cached_features_path)
+            # Synchronize all processes
+            torch.distributed.barrier()
+            # Now all ranks load the features
+            if self.rank != 0:
+                self.features = torch.load(cached_features_path, map_location="cpu")["features"]
+                self.lang_features = torch.load(cached_features_path, map_location="cpu")["lang_features"]
 
-    def _precompute_features(self):
-        features = []
-        lang_features = []
+        if os.path.exists(query_cached_features_path):
+            self.query_features = torch.load(
+                query_cached_features_path, map_location="cpu"
+            )
+            self.query_lang_features = self.query_features["lang_features"]
+            self.query_features = self.query_features["features"]
+        else:
+            self.query_features, self.query_lang_features = self._precompute_features(query_dataset)
+            if self.rank == 0:
+                os.makedirs(os.path.dirname(query_cached_features_path), exist_ok=True)
+                torch.save(
+                    {"features": self.query_features, "lang_features": self.query_lang_features}, 
+                    query_cached_features_path)
+            torch.distributed.barrier()
+            if self.rank != 0:
+                self.query_features = torch.load(query_cached_features_path, map_location="cpu")["features"]
+                self.query_lang_features = torch.load(query_cached_features_path, map_location="cpu")["lang_features"]
 
+        self.features = self.features.to(self.device)
+        self.lang_features = self.lang_features.to(self.device)
+        self.query_features = self.query_features.to(self.device)
+        self.query_lang_features = self.query_lang_features.to(self.device)
+
+        assert len(self.features) == len(dataset)
+        assert len(self.query_features) == len(query_dataset)
+
+    def _precompute_features(self, dataset):
         # Switch to evaluation mode
         self.model.eval()
         self.language_model.eval()
 
         # Set up loader
-        loader = torch.utils.data.DataLoader(
-            self.dataset,
-            batch_size=self.batch_size,
-            collate_fn=custom_collate_fn,
+        loader = utils.prepare_eval_samples(
+            dataset,
+            len(dataset),
+            self.batch_size,
         )
 
+        features_rank = []
         with torch.no_grad():
             for batch in tqdm(
                 loader,
@@ -90,13 +131,54 @@ class MMICES:
                 ).to(self.device)
                 image_features = self.model.encode_image(inputs)
                 image_features /= image_features.norm(dim=-1, keepdim=True)
-                features.append(image_features.detach())
+                image_features = image_features.cpu().detach()
 
                 # Precompute language features
                 text = self.tokenizer(batch["question"], padding=True, return_tensors="pt").to(self.device)
                 lang_features_sample = self.language_model(**text, output_hidden_states=True).hidden_states[-1][:, -1, :]
                 lang_features_sample /= lang_features_sample.norm(dim=-1, keepdim=True)
-                lang_features.append(lang_features_sample)
+                lang_features_sample = lang_features_sample.cpu().detach()
+
+                assert len(image_features) == len(batch["idx"])
+                assert len(lang_features_sample) == len(batch["idx"])
+
+                for feat, lang_feat, sample_id in zip(image_features, lang_features_sample, batch["idx"]):
+                    features_rank.append({"image_feature": feat.unsqueeze(0), "lang_feature": lang_feat.unsqueeze(0), "idx": sample_id})
+
+        # all gather
+        features = [None for _ in range(self.world_size)]
+        torch.distributed.all_gather_object(features, features_rank)  # list of lists
+
+        if self.rank != 0:
+            return None, None
+        
+        # sort by idx: features is a list of jsons, each json has a feature and an idx
+        features = sorted([item for sublist in features for item in sublist], key=lambda x: x["idx"])
+        idx = [item["idx"] for item in features]
+        lang_features = [item["lang_feature"].detach() for item in features]
+        features = [item["image_feature"].detach() for item in features]
+
+        # remove duplicates in idx and corresponding features
+        # Initialize an empty set to track seen indices
+        seen = set()
+        # Initialize empty lists to store unique indices and corresponding features
+        unique_idx = []
+        unique_features = []
+        unique_lang_features = []
+
+        # Iterate over the idx and features lists simultaneously
+        for i, feature, lang_feature in zip(idx, features, lang_features):
+            if i not in seen:
+                # If the index hasn't been seen, add it to the set and append the index and feature to the unique lists
+                seen.add(i)
+                unique_idx.append(i)
+                unique_features.append(feature)
+                unique_lang_features.append(lang_feature)
+
+        # Update the original lists to the unique lists
+        idx = unique_idx
+        features = unique_features
+        lang_features = unique_lang_features
 
         features = torch.cat(features)
         lang_features = torch.cat(lang_features)
@@ -112,17 +194,7 @@ class MMICES:
 
         with torch.no_grad():
             """Choose the top K images"""
-            inputs = torch.stack([self.image_processor(image) for image in batch["image"]]).to(
-                self.device
-            )
-
-            # Get the feature of the input image
-            query_feature = self.model.encode_image(inputs)
-            query_feature /= query_feature.norm(dim=-1, keepdim=True)
-            query_feature = query_feature.detach()
-
-            if query_feature.ndim == 1:
-                query_feature = query_feature.unsqueeze(0)
+            query_feature = self.query_features[batch["idx"]]
 
             # Compute the similarity of the input image to the precomputed features
             similarity = (query_feature @ self.features.T).squeeze()
@@ -134,13 +206,7 @@ class MMICES:
             indices = similarity.argsort(dim=-1, descending=True)[:, :K]
 
             """Among the top K images, choose the top num_examples texts"""
-            text = self.tokenizer(batch["question"], padding=True, return_tensors="pt").to(self.device)
-            query_lang_features = self.language_model(**text, output_hidden_states=True).hidden_states[-1][:, -1, :]
-            query_lang_features /= query_lang_features.norm(dim=-1, keepdim=True)
-            query_lang_features = query_lang_features.detach()
-
-            if query_lang_features.ndim == 1:
-                query_lang_features = query_lang_features.unsqueeze(0)
+            query_lang_features = self.query_lang_features[batch["idx"]]
             
             # Initialize a list to store the selected top text indices
             selected_text_indices = []
