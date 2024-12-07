@@ -7,6 +7,7 @@ import os
 from open_flamingo.train.distributed import init_distributed_device, world_info_from_env
 from torch.nn.parallel import DistributedDataParallel as DDP
 from open_flamingo.eval.utils import unwrap_model
+import numpy as np
 
 class MMICES:
     def __init__(
@@ -131,19 +132,19 @@ class MMICES:
                 ).to(self.device)
                 image_features = self.model.encode_image(inputs)
                 image_features /= image_features.norm(dim=-1, keepdim=True)
-                image_features = image_features.cpu().detach()
+                image_features = image_features.cpu().detach().numpy()
 
                 # Precompute language features
                 text = self.tokenizer(batch["question"], padding=True, return_tensors="pt").to(self.device)
                 lang_features_sample = self.language_model(**text, output_hidden_states=True).hidden_states[-1][:, -1, :]
                 lang_features_sample /= lang_features_sample.norm(dim=-1, keepdim=True)
-                lang_features_sample = lang_features_sample.cpu().detach()
+                lang_features_sample = lang_features_sample.cpu().detach().numpy()
 
                 assert len(image_features) == len(batch["idx"])
                 assert len(lang_features_sample) == len(batch["idx"])
 
                 for feat, lang_feat, sample_id in zip(image_features, lang_features_sample, batch["idx"]):
-                    features_rank.append({"image_feature": feat.unsqueeze(0), "lang_feature": lang_feat.unsqueeze(0), "idx": sample_id})
+                    features_rank.append({"image_feature": np.expand_dims(feat, axis=0), "lang_feature": np.expand_dims(lang_feat, axis=0), "idx": sample_id})
 
         # all gather
         features = [None for _ in range(self.world_size)]
@@ -155,8 +156,8 @@ class MMICES:
         # sort by idx: features is a list of jsons, each json has a feature and an idx
         features = sorted([item for sublist in features for item in sublist], key=lambda x: x["idx"])
         idx = [item["idx"] for item in features]
-        lang_features = [item["lang_feature"].detach() for item in features]
-        features = [item["image_feature"].detach() for item in features]
+        lang_features = [torch.from_numpy(item["lang_feature"]) for item in features]
+        features = [torch.from_numpy(item["image_feature"]) for item in features]
 
         # remove duplicates in idx and corresponding features
         # Initialize an empty set to track seen indices

@@ -7,6 +7,7 @@ import os
 from open_flamingo.train.distributed import init_distributed_device, world_info_from_env
 from torch.nn.parallel import DistributedDataParallel as DDP
 from open_flamingo.eval.utils import unwrap_model
+import numpy as np
 
 class JICES:
     def __init__(
@@ -101,12 +102,12 @@ class JICES:
                     output_hidden_states=True,
                 ).hidden_states[-1][:, -1, :].clone()
                 joint_features /= joint_features.norm(dim=-1, keepdim=True)
-                joint_features = joint_features.cpu().detach()
+                joint_features = joint_features.cpu().detach().numpy()  # For NCCL-based processed groups, internal tensor representations of objects must be moved to the GPU device before communication takes place.
                 
                 assert len(joint_features) == len(batch["idx"])
 
                 for feat_sample, sample_id in zip(joint_features, batch["idx"]):
-                    features_rank.append({"feature": feat_sample.unsqueeze(0), "idx": sample_id})
+                    features_rank.append({"feature": np.expand_dims(feat_sample, axis=0), "idx": sample_id})
 
         # all gather
         features = [None for _ in range(self.world_size)]
@@ -118,7 +119,7 @@ class JICES:
         # sort by idx: features is a list of jsons, each json has a feature and an idx
         features = sorted([item for sublist in features for item in sublist], key=lambda x: x["idx"])
         idx = [item["idx"] for item in features]
-        features = [item["feature"].detach() for item in features]
+        features = [torch.from_numpy(item["feature"]) for item in features]
         
         # remove duplicates in idx and corresponding features
         # Initialize an empty set to track seen indices
