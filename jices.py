@@ -39,7 +39,7 @@ class JICES:
                 cached_features_path, map_location="cpu"
             )
         else:
-            self.features = self._precompute_features(dataset)
+            self.features = self._precompute_features(dataset, is_train=False)
             if self.rank == 0:
                 os.makedirs(os.path.dirname(cached_features_path), exist_ok=True)
                 torch.save(self.features, cached_features_path)
@@ -68,7 +68,7 @@ class JICES:
         assert len(self.features) == len(dataset)
         assert len(self.query_features) == len(query_dataset)
 
-    def _precompute_features(self, dataset):
+    def _precompute_features(self, dataset, is_train=False):
         # Set up loader
         loader = utils.prepare_eval_samples(
             dataset,
@@ -89,18 +89,39 @@ class JICES:
                 batch_images, batch_text = [], []
                 for i in range(len(batch["image"])):
                     batch_images.append([batch["image"][i]])
-                    batch_text.append(
-                        self.model.get_vqa_prompt(question=batch["question"][i])
-                    )
+                    if is_train:
+                        batch_text.append(
+                            self.model.get_vqa_prompt(question=batch["question"][i], answer=batch["answers"][i][0])
+                        )
+                    else:
+                        batch_text.append(
+                            self.model.get_vqa_prompt(question=batch["question"][i])
+                        )
                 image_tensor = self.model._prepare_images(batch_images)
                 text_tensor, attention_mask = self.model._prepare_text(batch_text)
 
-                joint_features = self.model.__call__(
+                # joint_features = self.model.__call__(
+                #     lang_x=text_tensor,
+                #     vision_x=image_tensor,
+                #     attention_mask=attention_mask,
+                #     output_hidden_states=True,
+                # ).hidden_states[-1][:, -1, :].clone()
+
+                # joint_features = self.model(
+                #     lang_x=text_tensor,
+                #     vision_x=image_tensor,
+                #     attention_mask=attention_mask,
+                #     output_hidden_states=True,
+                # ).hidden_states[-1].mean(dim=1)  # TODO: mean or last, mask out question padded tokens
+
+                hidden_states = self.model(
                     lang_x=text_tensor,
                     vision_x=image_tensor,
                     attention_mask=attention_mask,
                     output_hidden_states=True,
-                ).hidden_states[-1][:, -1, :].clone()
+                ).hidden_states
+                joint_features = torch.sum(hidden_states[-1] * attention_mask.unsqueeze(-1), dim=1) / torch.sum(attention_mask.unsqueeze(-1), dim=1) 
+
                 joint_features /= joint_features.norm(dim=-1, keepdim=True)
                 joint_features = joint_features.cpu().detach().numpy()  # For NCCL-based processed groups, internal tensor representations of objects must be moved to the GPU device before communication takes place.
                 

@@ -3,7 +3,7 @@
 import torch
 from einops import rearrange
 from torch import nn
-from open_flamingo.src.helpers import PerceiverResampler
+from models.helpers import PerceiverResampler
 from torch.distributed.fsdp.wrap import (
     enable_wrap,
     wrap,
@@ -13,7 +13,7 @@ from torch.distributed.fsdp import (
     FullyShardedDataParallel as FSDP,
 )
 
-from open_flamingo.src.utils import apply_with_stopping_condition
+from models.utils import apply_with_stopping_condition
 
 
 class Flamingo(nn.Module):
@@ -69,6 +69,7 @@ class Flamingo(nn.Module):
         past_key_values=None,
         use_cache: bool = False,
         output_hidden_states: bool = False,
+        output_attentions: bool = False,
     ):
         """
         Forward pass of Flamingo.
@@ -111,6 +112,7 @@ class Flamingo(nn.Module):
             self._encode_vision_x(vision_x=vision_x)
             self._condition_media_locations(input_ids=lang_x)
 
+        # Open-flamingo follows a cross-attention-based early fusion, that's why there's no visual input directly into the language model
         output = self.lang_encoder(
             input_ids=lang_x,
             attention_mask=attention_mask,
@@ -118,6 +120,7 @@ class Flamingo(nn.Module):
             past_key_values=past_key_values,
             use_cache=use_cache,
             output_hidden_states=output_hidden_states,
+            output_attentions=output_attentions,
         )
 
         if clear_conditioned_layers:

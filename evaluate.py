@@ -84,7 +84,7 @@ parser.add_argument(
     "--embedding_selection",
     type=str,
     default=None,
-    choices=["rices", "mmices", "jices"],
+    choices=["rices", "mmices", "jices", "None"],
     help="Which embedding selection method to use.",
 )
 parser.add_argument(
@@ -125,7 +125,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--cached_demonstration_features",
-    default="/coc/testnvme/chuang475/projects/VQA-ICL/cache",
+    default="/coc/testnvme/chuang475/projects/VQA-ICL/cache_mean",
     help="Directory where rices features for all choices of in-context examples are stored as a pkl file with the dataset name. If None, features are re-computed by script.",
 )
 
@@ -349,6 +349,9 @@ def main():
         leftovers[i].lstrip("-"): leftovers[i + 1] for i in range(0, len(leftovers), 2)
     }
     eval_model = module.EvalModel(model_args)
+
+    if args.embedding_selection == "None":
+        args.embedding_selection = None
 
     # set up distributed evaluation
     args.local_rank, args.rank, args.world_size = world_info_from_env()
@@ -647,7 +650,7 @@ def evaluate_vqa(
             test_annotations_json_path,
         )
         # delete the temporary file
-        os.remove(f"{dataset_name}results_{random_uuid}.json")
+        # os.remove(f"{dataset_name}results_{random_uuid}.json")
 
     else:
         print("No annotations provided, skipping accuracy computation.")

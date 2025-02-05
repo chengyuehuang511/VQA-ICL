@@ -5,11 +5,11 @@
 import os
 import torch
 
-for dataset in ["vqav2"]:
+for dataset in ["ok_vqa"]:
 
     # file1 = f"/coc/testnvme/chuang475/projects/VQA-ICL/cache/rices/train/{dataset}.pkl"
-    file2 = f"/coc/testnvme/chuang475/projects/VQA-ICL/cache_bs1/rices/train/{dataset}.pkl"
-    file1 = f"/coc/testnvme/chuang475/projects/VQA-ICL/cache/jices/train/{dataset}.pkl"
+    file2 = f"/coc/testnvme/chuang475/projects/VQA-ICL/cache_mean/jices/test/{dataset}.pkl"
+    file1 = f"/coc/testnvme/chuang475/projects/VQA-ICL/cache_mean/jices/train/{dataset}.pkl"
     # file2 = "/coc/testnvme/chuang475/projects/VQA-ICL/cache_bs1/jices/train/vqav2.pkl"
 
     data1 = torch.load(file1, map_location="cpu")

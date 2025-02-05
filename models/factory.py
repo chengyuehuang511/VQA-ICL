@@ -4,8 +4,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import open_clip
 
 from models.flamingo import Flamingo
-from open_flamingo.src.flamingo_lm import FlamingoLMMixin
-from open_flamingo.src.utils import extend_instance
+from models.flamingo_lm import FlamingoLMMixin
+from models.utils import extend_instance
 
 
 def create_model_and_transforms(

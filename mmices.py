@@ -136,7 +136,8 @@ class MMICES:
 
                 # Precompute language features
                 text = self.tokenizer(batch["question"], padding=True, return_tensors="pt").to(self.device)
-                lang_features_sample = self.language_model(**text, output_hidden_states=True).hidden_states[-1][:, -1, :]
+                # lang_features_sample = self.language_model(**text, output_hidden_states=True).hidden_states[-1][:, -1, :]
+                lang_features_sample = self.language_model(**text, output_hidden_states=True).hidden_states[-1].mean(dim=1)
                 lang_features_sample /= lang_features_sample.norm(dim=-1, keepdim=True)
                 lang_features_sample = lang_features_sample.cpu().detach().numpy()
 

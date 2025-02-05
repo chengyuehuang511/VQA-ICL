@@ -6,7 +6,7 @@ from einops import repeat
 
 from open_flamingo.eval.eval_model import BaseEvalModel
 from models.factory import create_model_and_transforms
-from open_flamingo.eval.utils import unwrap_model, get_autocast, get_cast_dtype
+from models.utils import unwrap_model, get_autocast, get_cast_dtype
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 
@@ -262,6 +262,7 @@ class EvalModel(BaseEvalModel):
         clear_conditioned_layers: bool = False,
         use_cache: bool = False,
         output_hidden_states: bool = False,
+        output_attentions: bool = False,
     ):
         """
         Calls the forward function of the model.
@@ -282,6 +283,7 @@ class EvalModel(BaseEvalModel):
                         past_key_values=past_key_values,
                         use_cache=use_cache,
                         output_hidden_states=output_hidden_states,
+                        output_attentions=output_attentions,
                     )
             return outputs
 
@@ -304,6 +306,7 @@ class EvalModel(BaseEvalModel):
                         past_key_values=past_key_values,
                         use_cache=True,
                         output_hidden_states=output_hidden_states,
+                        output_attentions=output_attentions,
                     )
 
             past_key_values = outputs.past_key_values
