@@ -3,3 +3,4 @@ cache/
 cache_bs1/
 cache_mean/
 cache_mask_pad/
+results/

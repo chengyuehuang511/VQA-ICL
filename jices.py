@@ -97,33 +97,45 @@ class JICES:
                         batch_text.append(
                             self.model.get_vqa_prompt(question=batch["question"][i])
                         )
-                image_tensor = self.model._prepare_images(batch_images)
-                text_tensor, attention_mask = self.model._prepare_text(batch_text)
+                # check if self.model has a _prepare_images method (e.g. openflamingo)
+                if hasattr(self.model, "_prepare_images"):
+                    image_tensor = self.model._prepare_images(batch_images)
+                    text_tensor, attention_mask = self.model._prepare_text(batch_text)
 
-                # joint_features = self.model.__call__(
-                #     lang_x=text_tensor,
-                #     vision_x=image_tensor,
-                #     attention_mask=attention_mask,
-                #     output_hidden_states=True,
-                # ).hidden_states[-1][:, -1, :].clone()
+                    # last token
+                    joint_features = self.model.__call__(
+                        lang_x=text_tensor,
+                        vision_x=image_tensor,
+                        attention_mask=attention_mask,
+                        output_hidden_states=True,
+                    ).hidden_states[-1][:, -1, :].clone()
 
-                # joint_features = self.model(
-                #     lang_x=text_tensor,
-                #     vision_x=image_tensor,
-                #     attention_mask=attention_mask,
-                #     output_hidden_states=True,
-                # ).hidden_states[-1].mean(dim=1)  # TODO: mean or last, mask out question padded tokens
+                    # mean pooling
+                    # joint_features = self.model(
+                    #     lang_x=text_tensor,
+                    #     vision_x=image_tensor,
+                    #     attention_mask=attention_mask,
+                    #     output_hidden_states=True,
+                    # ).hidden_states[-1].mean(dim=1)  # TODO: mean or last, mask out question padded tokens
 
-                hidden_states = self.model(
-                    lang_x=text_tensor,
-                    vision_x=image_tensor,
-                    attention_mask=attention_mask,
-                    output_hidden_states=True,
-                ).hidden_states
-                joint_features = torch.sum(hidden_states[-1] * attention_mask.unsqueeze(-1), dim=1) / torch.sum(attention_mask.unsqueeze(-1), dim=1) 
+                    # mean pooling with attention mask
+                    # hidden_states = self.model(
+                    #     lang_x=text_tensor,
+                    #     vision_x=image_tensor,
+                    #     attention_mask=attention_mask,
+                    #     output_hidden_states=True,
+                    # ).hidden_states
+                    # joint_features = torch.sum(hidden_states[-1] * attention_mask.unsqueeze(-1), dim=1) / torch.sum(attention_mask.unsqueeze(-1), dim=1) 
+                else:  # e.g. chamaleon
+                    joint_features = self.model.__call__(
+                        batch_text,
+                        batch_images,
+                        output_hidden_states=True,
+                    ).hidden_states[-1][:, -1, :].clone()
 
                 joint_features /= joint_features.norm(dim=-1, keepdim=True)
-                joint_features = joint_features.cpu().detach().numpy()  # For NCCL-based processed groups, internal tensor representations of objects must be moved to the GPU device before communication takes place.
+                # TypeError: Got unsupported ScalarType BFloat16
+                joint_features = joint_features.to(torch.float16).cpu().detach().numpy()  # For NCCL-based processed groups, internal tensor representations of objects must be moved to the GPU device before communication takes place.
                 
                 assert len(joint_features) == len(batch["idx"])
 

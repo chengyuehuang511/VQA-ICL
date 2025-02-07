@@ -33,12 +33,12 @@ parser.add_argument(
     help="Model name. Currently only `OpenFlamingo` is supported.",
     default="open_flamingo",
 )
-parser.add_argument(
-    "--model_id",
-    type=str,
-    help="Model ID for the model to use for JICES.",
-    default="openflamingo/OpenFlamingo-3B-vitl-mpt1b",
-)
+# parser.add_argument(
+#     "--model_id",
+#     type=str,
+#     help="Model ID for the model to use for JICES.",
+#     default="openflamingo/OpenFlamingo-3B-vitl-mpt1b",
+# )
 parser.add_argument(
     "--results_file", type=str, default=None, help="JSON file to save results"
 )
@@ -343,7 +343,12 @@ parser.add_argument(
 
 def main():
     args, leftovers = parser.parse_known_args()
-    module = importlib.import_module(f"models.{args.model}")
+    if args.model == "open_flamingo":
+        module = importlib.import_module(f"models.openflamingo.{args.model}")
+    elif args.model == "chameleon":
+        module = importlib.import_module(f"models.chameleon.{args.model}")
+    else:
+        raise ValueError(f"Unsupported model: {args.model}")
 
     model_args = {
         leftovers[i].lstrip("-"): leftovers[i + 1] for i in range(0, len(leftovers), 2)
@@ -360,8 +365,8 @@ def main():
     eval_model.init_distributed()  # DDP
     print("Device ID: ", eval_model.device)
 
-    if args.model != "open_flamingo" and args.shots != [0]:
-        raise ValueError("Only 0 shot eval is supported for non-open_flamingo models")
+    # if args.model != "open_flamingo" and args.shots != [0]:
+    #     raise ValueError("Only 0 shot eval is supported for non-open_flamingo models")
 
     if len(args.trial_seeds) != args.num_trials:
         raise ValueError("Number of trial seeds must be == number of trials.")
@@ -640,17 +645,17 @@ def evaluate_vqa(
 
     # save the predictions to a temporary file
     random_uuid = str(uuid.uuid4())
-    with open(f"{dataset_name}results_{random_uuid}.json", "w") as f:
+    with open(f"results/{dataset_name}results_{random_uuid}.json", "w") as f:
         f.write(json.dumps(all_predictions, indent=4))
 
     if test_annotations_json_path is not None:
         acc = compute_vqa_accuracy(
-            f"{dataset_name}results_{random_uuid}.json",
+            f"results/{dataset_name}results_{random_uuid}.json",
             test_questions_json_path,
             test_annotations_json_path,
         )
         # delete the temporary file
-        # os.remove(f"{dataset_name}results_{random_uuid}.json")
+        os.remove(f"results/{dataset_name}results_{random_uuid}.json")
 
     else:
         print("No annotations provided, skipping accuracy computation.")
