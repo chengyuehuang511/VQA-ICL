@@ -48,8 +48,8 @@ srun -u /coc/testnvme/chuang475/miniconda3/envs/lavis_same/bin/python -m torch.d
     --lm_path anas-awadalla/mpt-1b-redpajama-200b \
     --lm_tokenizer_path anas-awadalla/mpt-1b-redpajama-200b \
     --cross_attn_every_n_layers 1 \
-    --model_id "facebook/chameleon-7b" \
-    --model "model_chameleon" \
+    --model_id "HuggingFaceM4/idefics2-8b" \
+    --model "model_idefics2" \
     --checkpoint_path "/nethome/chuang475/flash/.cache/huggingface/hub/models--openflamingo--OpenFlamingo-3B-vitl-mpt1b/snapshots/ed3a0c3190b2fc2d1c39630738896d4e73ce1bbc/checkpoint.pt" \
     --results_file "results.json" \
     --precision amp_bf16 \
@@ -80,5 +80,5 @@ srun -u /coc/testnvme/chuang475/miniconda3/envs/lavis_same/bin/python -m torch.d
     --vizwiz_test_questions_json_path "data/vizwiz/val_questions_vqa_format.json" \
     --vizwiz_test_annotations_json_path "data/vizwiz/val_annotations_vqa_format.json" \
     --embedding_selection $embedding_selection \
-    --cached_demonstration_features "/coc/testnvme/chuang475/projects/VQA-ICL/cache/chameleon" \
-    --shots 0 1 2 3 \
+    --cached_demonstration_features "/coc/testnvme/chuang475/projects/VQA-ICL/cache/idefics2" \
+    # --shots 0 1 2 3 \

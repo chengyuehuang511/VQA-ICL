@@ -354,6 +354,8 @@ def main():
         module = importlib.import_module(f"models.openflamingo.{args.model}")
     elif args.model == "model_chameleon":
         module = importlib.import_module(f"models.chameleon.{args.model}")
+    elif args.model == "model_idefics2":
+        module = importlib.import_module(f"models.idefics2.{args.model}")
     else:
         raise ValueError(f"Unsupported model: {args.model}")
 
@@ -599,28 +601,47 @@ def evaluate_vqa(
                 context_images = [x["image"] for x in batch_demo_samples[i]]
             else:
                 context_images = []
-            if args.model == "model_openflamingo":
+            if args.model == "model_openflamingo" or args.model == "model_idefics2":
                 batch_images.append(context_images + [batch["image"][i]])
             elif args.model == "model_chameleon":
                 batch_images += (context_images + [batch["image"][i]])
+            else:
+                raise ValueError(f"Unsupported model: {args.model}")
 
-            context_text = "".join(
-                [
-                    eval_model.get_vqa_prompt(
-                        question=x["question"], answer=x["answers"][0]
-                    )
-                    + "\n"
-                    for x in batch_demo_samples[i]
+            if args.model == "model_idefics2":
+                context_text = [
+                    {   
+                        "role": "user",
+                        "content": [{"type": "text", "text": "You are a helpful assistant."}]
+                    }
                 ]
-            )
+                for x in batch_demo_samples[i]:
+                    context_text += eval_model.get_vqa_prompt(question=x["question"], answer=x["answers"][0], if_apply_chat_template=False)
+                
+                batch_text.append(
+                    eval_model.get_vqa_prompt_icl(
+                        context_text + eval_model.get_vqa_prompt(question=batch["question"][i], if_apply_chat_template=False),
+                        add_generation_prompt=True,
+                    )
+                )
+            else:
+                context_text = "".join(
+                    [
+                        eval_model.get_vqa_prompt(
+                            question=x["question"], answer=x["answers"][0]
+                        )
+                        + "\n"
+                        for x in batch_demo_samples[i]
+                    ]
+                )
 
-            # Keep the text but remove the image tags for the zero-shot case
-            if num_shots == 0:
-                context_text = context_text.replace("<image>", "")
+                # Keep the text but remove the image tags for the zero-shot case
+                if num_shots == 0:
+                    context_text = context_text.replace("<image>", "")
 
-            batch_text.append(
-                context_text + eval_model.get_vqa_prompt(question=batch["question"][i])
-            )
+                batch_text.append(
+                    context_text + eval_model.get_vqa_prompt(question=batch["question"][i])
+                )
 
         print(batch_images)
         print(batch_text)

@@ -12,7 +12,7 @@ do
             #     continue
             # fi
             job_name="${name}_$(date +%Y%m%d_%H%M%S)"
-            output_dir="output/chameleon/train_${train_dataset_name}/test_${test_dataset_name}/${embedding_selection}/${job_name}"
+            output_dir="output/idefics2/train_${train_dataset_name}/test_${test_dataset_name}/${embedding_selection}/${job_name}"
             mkdir -p "$output_dir"
             sbatch --export "ALL,embedding_selection=${embedding_selection},test_dataset_name=${test_dataset_name},train_dataset_name=${train_dataset_name}" --job-name="${job_name}" --output="${output_dir}/slurm-%j.out" --error="${output_dir}/slurm-%j.err" ${name}.sh
         done
