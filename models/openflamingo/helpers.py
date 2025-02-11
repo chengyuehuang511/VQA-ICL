@@ -271,7 +271,7 @@ class GatedCrossAttentionBlock(nn.Module):
                 media_locations=media_locations,
                 use_cached_media=use_cached_media,
             )
-            * self.attn_gate.tanh() * 2  # upweight image attention
+            * self.attn_gate.tanh() #* 2  # upweight image attention
             + x
         )
         x = self.ff(x) * self.ff_gate.tanh() + x

@@ -26,7 +26,7 @@ def compute_effective_num_shots(num_shots, model_type):
     Compute the effective number of shots for a given model type.
     For example, following Flamingo, 0-shot OF evaluations use two text-only shots.
     """
-    if model_type == "open_flamingo":
+    if model_type == "model_openflamingo" or model_type == "model_chameleon":
         return num_shots if num_shots > 0 else 2
     return num_shots
 

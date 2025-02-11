@@ -1,3 +1,8 @@
+import os
+import sys
+# append the path to the grandgrandparent directory
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+
 from typing import List, Dict
 
 from PIL import Image
@@ -32,7 +37,7 @@ class EvalModel(BaseEvalModel):
 
         self.device = (
             model_args["device"]
-            if ("device" in model_args and model_args["device"] >= 0)
+            if ("device" in model_args and model_args["device"] >= 0)  # and model_args["device"] >= 0
             else "cpu"
         )
 
@@ -149,8 +154,10 @@ class EvalModel(BaseEvalModel):
 
         # Extract only the new gnerated tokens
         outputs = outputs[:, len(input_ids[0]) :]
+        output_text = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
-        return self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        print(output_text)
+        return output_text
 
     def get_rank_classifications(
         self,
@@ -338,3 +345,45 @@ class EvalModel(BaseEvalModel):
 
     def get_hateful_memes_prompt(self, text, label=None) -> str:
         return f"<image>is an image with: '{text}' written on it. Is it hateful? Answer:{label if label is not None else ''}{'<|endofchunk|>' if label is not None else ''}"
+
+
+if __name__ == "__main__":
+    import requests
+
+    # Example usage:
+    vision_encoder_path = "ViT-L-14"
+    lm_path = "anas-awadalla/mpt-1b-redpajama-200b"
+    checkpoint_path = "/nethome/chuang475/flash/.cache/huggingface/hub/models--openflamingo--OpenFlamingo-3B-vitl-mpt1b/snapshots/ed3a0c3190b2fc2d1c39630738896d4e73ce1bbc/checkpoint.pt"
+    lm_tokenizer_path = "anas-awadalla/mpt-1b-redpajama-200b"
+    cross_attn_every_n_layers = 1
+    vision_encoder_pretrained = "openai"
+    precision = "amp_bf16"
+
+    device = "cuda:0"
+
+    url = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg?download=true"
+    image = Image.open(requests.get(url, stream=True).raw)
+
+    samples = {
+        "image_raw": [[image], [image], [image], [image]],
+        "text_input_raw": ["What is this?", "Is there a car?", "What color is the car?", "What is the brand of the car?"],
+    }
+
+    with torch.inference_mode():
+        model = EvalModel(
+            {
+                "vision_encoder_path": vision_encoder_path,
+                "lm_path": lm_path,
+                "device": device,
+                "checkpoint_path": checkpoint_path,
+                "lm_tokenizer_path": lm_tokenizer_path,
+                "cross_attn_every_n_layers": cross_attn_every_n_layers,
+                "vision_encoder_pretrained": vision_encoder_pretrained,
+                "precision": precision,
+                "device": device,
+            }
+        )
+        samples["text_input_raw"] = [model.get_vqa_prompt(question=p) for p in samples["text_input_raw"]]
+        print(samples["text_input_raw"])
+        output = model.get_outputs(batch_text=samples["text_input_raw"], batch_images=samples["image_raw"], min_generation_length=0, max_generation_length=5, num_beams=3, length_penalty=0.0)
+        print(output)

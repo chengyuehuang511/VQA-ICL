@@ -31,7 +31,7 @@ parser.add_argument(
     "--model",
     type=str,
     help="Model name. Currently only `OpenFlamingo` is supported.",
-    default="open_flamingo",
+    default="model_openflamingo",
 )
 # parser.add_argument(
 #     "--model_id",
@@ -343,9 +343,16 @@ parser.add_argument(
 
 def main():
     args, leftovers = parser.parse_known_args()
-    if args.model == "open_flamingo":
+    print(args)
+    print(leftovers)
+
+    # set up distributed evaluation
+    args.local_rank, args.rank, args.world_size = world_info_from_env()
+    device_id = init_distributed_device(args)
+    
+    if args.model == "model_openflamingo":
         module = importlib.import_module(f"models.openflamingo.{args.model}")
-    elif args.model == "chameleon":
+    elif args.model == "model_chameleon":
         module = importlib.import_module(f"models.chameleon.{args.model}")
     else:
         raise ValueError(f"Unsupported model: {args.model}")
@@ -353,19 +360,19 @@ def main():
     model_args = {
         leftovers[i].lstrip("-"): leftovers[i + 1] for i in range(0, len(leftovers), 2)
     }
+    print("device_id", device_id)
+    #"cuda:0" --> 0
+    model_args['device'] = int(str(device_id).split(":")[1])
     eval_model = module.EvalModel(model_args)
 
     if args.embedding_selection == "None":
         args.embedding_selection = None
-
-    # set up distributed evaluation
-    args.local_rank, args.rank, args.world_size = world_info_from_env()
-    device_id = init_distributed_device(args)
-    eval_model.set_device(device_id)
+    
+    # eval_model.set_device(device_id)
     eval_model.init_distributed()  # DDP
     print("Device ID: ", eval_model.device)
 
-    # if args.model != "open_flamingo" and args.shots != [0]:
+    # if args.model != "model_openflamingo" and args.shots != [0]:
     #     raise ValueError("Only 0 shot eval is supported for non-open_flamingo models")
 
     if len(args.trial_seeds) != args.num_trials:
@@ -592,7 +599,10 @@ def evaluate_vqa(
                 context_images = [x["image"] for x in batch_demo_samples[i]]
             else:
                 context_images = []
-            batch_images.append(context_images + [batch["image"][i]])
+            if args.model == "model_openflamingo":
+                batch_images.append(context_images + [batch["image"][i]])
+            elif args.model == "model_chameleon":
+                batch_images += (context_images + [batch["image"][i]])
 
             context_text = "".join(
                 [
@@ -612,6 +622,9 @@ def evaluate_vqa(
                 context_text + eval_model.get_vqa_prompt(question=batch["question"][i])
             )
 
+        print(batch_images)
+        print(batch_text)
+        
         outputs = eval_model.get_outputs(
             batch_images=batch_images,
             batch_text=batch_text,
@@ -630,6 +643,7 @@ def evaluate_vqa(
         new_predictions = map(process_function, outputs)
 
         for new_prediction, sample_id in zip(new_predictions, batch["question_id"]):
+            print(new_prediction)
             predictions.append({"answer": new_prediction, "question_id": sample_id})
 
     # all gather
@@ -655,7 +669,7 @@ def evaluate_vqa(
             test_annotations_json_path,
         )
         # delete the temporary file
-        os.remove(f"results/{dataset_name}results_{random_uuid}.json")
+        # os.remove(f"results/{dataset_name}results_{random_uuid}.json")
 
     else:
         print("No annotations provided, skipping accuracy computation.")

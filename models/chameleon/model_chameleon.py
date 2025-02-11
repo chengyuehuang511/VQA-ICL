@@ -6,8 +6,9 @@ from einops import repeat
 
 from open_flamingo.eval.eval_model import BaseEvalModel
 from transformers.modeling_outputs import CausalLMOutputWithPast
+from open_flamingo.eval.utils import unwrap_model, get_autocast, get_cast_dtype
 
-from transformers import AutoProcessor, AutoModelForImageTextToText
+from transformers import ChameleonProcessor, ChameleonForConditionalGeneration, BitsAndBytesConfig
 
 
 class EvalModel(BaseEvalModel):
@@ -29,12 +30,26 @@ class EvalModel(BaseEvalModel):
             if ("device" in model_args and model_args["device"] >= 0)
             else "cpu"
         )
+        print(f"Using device: {self.device}")
         # self.device = "cuda:0"
 
-        self.processor = AutoProcessor.from_pretrained(model_args["model_id"], torch_dtype=torch.bfloat16)
-        self.model = AutoModelForImageTextToText.from_pretrained(model_args["model_id"], torch_dtype=torch.bfloat16)
+        self.processor = ChameleonProcessor.from_pretrained(model_args["model_id"], torch_dtype=torch.bfloat16)
+        self.processor.tokenizer.padding_side = "left"
         
-        self.model.to(self.device)
+        # specify how to quantize the model
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+        )
+        self.model = ChameleonForConditionalGeneration.from_pretrained(
+            model_args["model_id"], 
+            torch_dtype=torch.bfloat16,
+            quantization_config=quantization_config,
+            low_cpu_mem_usage=True,
+            attn_implementation="flash_attention_2",
+        ).to(self.device)
+        
         self.model.eval()
     
     def get_outputs(
@@ -48,11 +63,17 @@ class EvalModel(BaseEvalModel):
     ) -> List[str]:
 
         # with self.maybe_autocast():
-        model_inputs = self.processor(text=batch_text, images=batch_images, return_tensors="pt", padding="longest").to(self.device, torch.bfloat16)
+        model_inputs = self.processor(
+            text=batch_text, 
+            images=batch_images, 
+            return_tensors="pt", 
+            padding="longest",
+            return_for_text_completion=True,
+        ).to(self.device, torch.bfloat16)
         input_len = model_inputs["input_ids"].shape[-1]
 
         with torch.inference_mode():
-            outputs = self.model.generate(
+            outputs = unwrap_model(self.model).generate(
                 **model_inputs,
                 min_new_tokens=min_generation_length,
                 max_new_tokens=max_generation_length,
@@ -63,6 +84,7 @@ class EvalModel(BaseEvalModel):
             outputs = outputs[:, input_len:]
             output_text = self.processor.batch_decode(outputs, skip_special_tokens=True)
 
+        print(output_text)
         return output_text
 
     def __call__(
@@ -89,7 +111,7 @@ class EvalModel(BaseEvalModel):
         return outputs
 
     def get_vqa_prompt(self, question, answer=None) -> str:
-        return f"<image>Question:{question} Short answer:{answer if answer is not None else ''}{'<|endofchunk|>' if answer is not None else ''}"
+        return f"<image>Question:{question} Short answer:{answer if answer is not None else ''}" #{'<|endofchunk|>' if answer is not None else ''}"
 
     def get_caption_prompt(self, caption=None) -> str:
         return f"<image>Output:{caption if caption is not None else ''}{'<|endofchunk|>' if caption is not None else ''}"
@@ -106,7 +128,7 @@ if __name__ == "__main__":
 
     # Example usage:
     model_id = "facebook/chameleon-7b"
-    device = "cuda:0"
+    device = 0
 
     url = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg?download=true"
     image = Image.open(requests.get(url, stream=True).raw)
@@ -117,8 +139,10 @@ if __name__ == "__main__":
     }
 
     with torch.inference_mode():
-        model = EvalModel({"model_id": model_id})
+        model = EvalModel({"model_id": model_id, "device": device})
+        # print the gpu memory usage
+        print(torch.cuda.memory_summary(device=device, abbreviated=True))
         samples["text_input_raw"] = [model.get_vqa_prompt(question=p) for p in samples["text_input_raw"]]
         print(samples["text_input_raw"])
-        output = model.get_outputs(batch_text=samples["text_input_raw"], batch_images=samples["image_raw"], min_generation_length=0, max_generation_length=10, num_beams=3, length_penalty=0.0)
+        output = model.get_outputs(batch_text=samples["text_input_raw"], batch_images=samples["image_raw"], min_generation_length=0, max_generation_length=5, num_beams=3, length_penalty=0.0)
         print(output)
