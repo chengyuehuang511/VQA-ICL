@@ -25,6 +25,8 @@ from vqa_metric import compute_vqa_accuracy, postprocess_vqa_generation
 
 from open_flamingo.train.distributed import init_distributed_device, world_info_from_env
 
+from pai_attention import mistral_modify
+
 parser = argparse.ArgumentParser()
 
 parser.add_argument(
@@ -573,6 +575,11 @@ def evaluate_vqa(
             eval_model=eval_model,
             query_dataset=test_dataset,
             query_cached_features_path=query_cached_features_path,
+            use_attn=True,
+            alpha=2,
+            use_cfg=False,
+            pai=True,
+            model_name=args.model,
         )
     else:
         query_set = utils.get_query_set(train_dataset, args.query_set_size)

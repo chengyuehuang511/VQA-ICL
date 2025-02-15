@@ -558,3 +558,30 @@ def postprocess_vqa_generation(predictions):
     answer = re.split("Question|Answer|Short", predictions, 1)[0]
     answer = re.split(", ", answer, 1)[0]
     return answer
+
+
+if __name__ == "__main__":
+    annotation_json_path = "/srv/datasets/ok-vqa_dataset/mscoco_val2014_annotations.json"
+    question_json_path = "/srv/datasets/ok-vqa_dataset/OpenEnded_mscoco_val2014_questions.json"
+    result_json_path = "/coc/testnvme/chuang475/projects/VQA-ICL/results/ok_vqaresults_0a791877-4980-4f76-9c2b-11f71a044afe.json"
+
+    vqa = VQA(annotation_json_path, question_json_path)
+    vqaRes = vqa.loadRes(result_json_path, question_json_path)
+
+    # create vqaEval object by taking vqa and vqaRes
+    # n is precision of accuracy (number of places after decimal), default is 2
+    vqaEval = VQAEval(vqa, vqaRes, n=2)
+
+    resAns = "Hi ."
+    print(resAns)
+    resAns = resAns.replace("\n", " ")
+    print(resAns)
+    resAns = resAns.replace("\t", " ")
+    print(resAns)
+    resAns = resAns.strip()
+    print(resAns + "n")
+
+    resAns = vqaEval.processPunctuation(resAns)
+    print(resAns + "n")
+    resAns = vqaEval.processDigitArticle(resAns)
+    print(resAns + "n")

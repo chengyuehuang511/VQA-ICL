@@ -4,7 +4,8 @@
 #SBATCH --cpus-per-gpu=16
 #SBATCH --gpus-per-node="a40:2"
 #SBATCH --qos="short"
-#SBATCH --mem-per-gpu=45G
+#SBATCH --mem-per-gpu=50G
+##SBATCH -x cheetah
 
 <<com
 Example Slurm evaluation script. 
@@ -53,7 +54,7 @@ srun -u /coc/testnvme/chuang475/miniconda3/envs/lavis_same/bin/python -m torch.d
     --checkpoint_path "/nethome/chuang475/flash/.cache/huggingface/hub/models--openflamingo--OpenFlamingo-3B-vitl-mpt1b/snapshots/ed3a0c3190b2fc2d1c39630738896d4e73ce1bbc/checkpoint.pt" \
     --results_file "results.json" \
     --precision amp_bf16 \
-    --batch_size 4 \
+    --batch_size 8 \
     --test_dataset_name $test_dataset_name \
     --train_dataset_name $train_dataset_name \
     --vqav2_train_image_dir_path "/srv/datasets/coco/train2014" \
@@ -80,5 +81,5 @@ srun -u /coc/testnvme/chuang475/miniconda3/envs/lavis_same/bin/python -m torch.d
     --vizwiz_test_questions_json_path "data/vizwiz/val_questions_vqa_format.json" \
     --vizwiz_test_annotations_json_path "data/vizwiz/val_annotations_vqa_format.json" \
     --embedding_selection $embedding_selection \
-    --cached_demonstration_features "/coc/testnvme/chuang475/projects/VQA-ICL/cache/idefics2" \
-    # --shots 0 1 2 3 \
+    --cached_demonstration_features "/coc/testnvme/chuang475/projects/VQA-ICL/cache/idefics2/pai" \
+    --shots 4 \

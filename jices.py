@@ -8,6 +8,7 @@ from open_flamingo.train.distributed import init_distributed_device, world_info_
 from torch.nn.parallel import DistributedDataParallel as DDP
 from open_flamingo.eval.utils import unwrap_model
 import numpy as np
+from pai_attention import mistral_modify, mistral_recover
 
 class JICES:
     def __init__(
@@ -19,6 +20,7 @@ class JICES:
         cached_features_path=None,
         query_dataset=None,
         query_cached_features_path=None,
+        **kwargs,
     ):
         self.dataset = dataset
         self.query_dataset = query_dataset
@@ -32,6 +34,13 @@ class JICES:
 
         # Load the model and processor
         self.model = eval_model
+
+        self.pai = kwargs["pai"] if "pai" in kwargs else False
+        self.model_name = kwargs["model_name"] if "model_name" in kwargs else None
+
+        self.use_attn = kwargs["use_attn"] if "use_attn" in kwargs else False
+        self.alpha = kwargs["alpha"] if "alpha" in kwargs else 0.0
+        self.use_cfg = kwargs["use_cfg"] if "use_cfg" in kwargs else False
 
         # Precompute features
         if os.path.exists(cached_features_path):
@@ -127,6 +136,58 @@ class JICES:
                     # ).hidden_states
                     # joint_features = torch.sum(hidden_states[-1] * attention_mask.unsqueeze(-1), dim=1) / torch.sum(attention_mask.unsqueeze(-1), dim=1) 
                 else:  # e.g. chamaleon
+                    # print("batch_text", batch_text)
+
+                    # print("=======start a new batch=======")
+                    # for i in range(len(model_inputs['input_ids'])):
+                    #     img_idx = (model_inputs['input_ids'][i] == 32001)
+                    #     img_start_idx = img_idx.nonzero(as_tuple=True)[0][0]
+                    #     img_end_idx = img_idx.nonzero(as_tuple=True)[0][-1]
+
+                    #     print("batch_text", batch_text[i])
+                    #     print("img_start_idx", img_start_idx)
+                    #     print("img_end_idx", img_end_idx)
+
+                    #     # adjust img_start_idx and img_end_idx to substract the number of left padded tokens
+                    #     print("model_inputs['attention_mask'][i].shape", model_inputs['attention_mask'][i].shape)
+                    #     print("model_inputs")
+                    #     left_padding_counts = (model_inputs['attention_mask'][i] == 0).sum()
+                    #     img_start_idx -= left_padding_counts
+                    #     img_end_idx -= left_padding_counts
+                    #     print("adjusted img_start_idx", img_start_idx)
+                    #     print("adjusted img_end_idx", img_end_idx)
+                    
+                    if self.pai == True:
+                        if self.model_name == "model_idefics2":
+                            print("Mistral modification")
+                            # print("unwrap_model(self.model.model)", unwrap_model(self.model.model))
+                            # print("end_layer", len(unwrap_model(self.model.model).model.text_model.layers))
+                            
+                            model_inputs = self.model.__call__(
+                                batch_text,
+                                batch_images,
+                                output_tokens=True,
+                            )
+
+                            img_idx = (model_inputs['input_ids'][0] == 32001)
+                            img_start_idx = img_idx.nonzero(as_tuple=True)[0][0]
+                            img_end_idx = img_idx.nonzero(as_tuple=True)[0][-1]
+
+                            left_padding_counts = (model_inputs['attention_mask'][i] == 0).sum()
+                            img_start_idx -= left_padding_counts
+                            img_end_idx -= left_padding_counts
+                            
+                            mistral_modify(
+                                unwrap_model(self.model.model).model.text_model,
+                                start_layer=0,
+                                end_layer=len(unwrap_model(self.model.model).model.text_model.layers),
+                                use_attn=self.use_attn,
+                                alpha=self.alpha,
+                                use_cfg=self.use_cfg,
+                                img_start_idx=img_start_idx,
+                                img_end_idx=img_end_idx,
+                            )
+
                     joint_features = self.model.__call__(
                         batch_text,
                         batch_images,
@@ -176,6 +237,14 @@ class JICES:
         features = torch.cat(features)
         # print("idx", idx)
         # print("features.shape", features.shape)
+
+        if self.pai == True and self.model_name == "model_idefics2":
+            mistral_recover(
+                unwrap_model(self.model.model).model.text_model,
+                start_layer=0,
+                end_layer=len(unwrap_model(self.model.model).model.text_model.layers),
+            )
+
         return features
 
     def find(self, batch, num_examples):

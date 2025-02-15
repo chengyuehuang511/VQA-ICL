@@ -34,22 +34,33 @@ class EvalModel(BaseEvalModel):
         print(f"Using device: {self.device}")
         # self.device = "cuda:0"
 
-        self.processor = Idefics2Processor.from_pretrained(model_args["model_id"], torch_dtype=torch.bfloat16)
-        self.processor.tokenizer.padding_side = "left"
+        self.processor = Idefics2Processor.from_pretrained(model_args["model_id"], 
+                                                           torch_dtype=torch.float16,
+                                                           do_image_splitting=False)
+        # self.processor.tokenizer.padding_side = "left"
         
         # specify how to quantize the model
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_compute_dtype=torch.float16,
         )
+        # quantization_config = BitsAndBytesConfig(
+        #     load_in_8bit=True,
+        #     bnb_8bit_quant_type="nf8",
+        #     bnb_8bit_use_double_quant=True,
+        #     bnb_8bit_compute_dtype=torch.float16,
+        # )
         self.model = Idefics2ForConditionalGeneration.from_pretrained(
             model_args["model_id"], 
-            torch_dtype=torch.bfloat16,
+            torch_dtype=torch.float16,
             quantization_config=quantization_config,
-            low_cpu_mem_usage=True,
-            attn_implementation="flash_attention_2",
-        ).to(self.device)
+            # low_cpu_mem_usage=True,
+            # attn_implementation="flash_attention_2",  # can't use flash_attention_2 with output_attentions=True
+            device_map=self.device,
+        )#.to(self.device)
+        print("EvalModel device:", self.model.device)
         
         self.model.eval()
     
@@ -69,8 +80,7 @@ class EvalModel(BaseEvalModel):
             images=batch_images, 
             return_tensors="pt", 
             padding="longest",
-            return_for_text_completion=True,
-        ).to(self.device, torch.bfloat16)
+        ).to(self.device, torch.float16)
         input_len = model_inputs["input_ids"].shape[-1]
 
         with torch.inference_mode():
@@ -94,6 +104,7 @@ class EvalModel(BaseEvalModel):
         batch_images: List[List[Image.Image]],
         output_hidden_states: bool = False,
         output_attentions: bool = False,
+        output_tokens: bool = False,
     ):
         """
         Calls the forward function of the model.
@@ -102,7 +113,9 @@ class EvalModel(BaseEvalModel):
             *excluding* the tokens already in past_key_values.
             We then repeatedly call forward, updating the past_key_values.
         """
-        model_inputs = self.processor(text=batch_text, images=batch_images, return_tensors="pt", padding="longest").to(self.device, torch.bfloat16)
+        model_inputs = self.processor(text=batch_text, images=batch_images, return_tensors="pt", padding="longest").to(self.device, torch.float16)
+        if output_tokens:
+            return model_inputs
         with torch.inference_mode():
             outputs = self.model(
                 **model_inputs,
@@ -170,8 +183,8 @@ if __name__ == "__main__":
     image = Image.open(requests.get(url, stream=True).raw)
 
     samples = {
-        "image_raw": [[image], [image], [image], [image]],
-        "text_input_raw": ["What is this?", "Is there a car?", "What color is the car?", "What is the brand of the car?"],
+        "image_raw": [[image]], #, [image], [image], [image]],
+        "text_input_raw": ["What is this?"] #, "Is there a car?", "What color is the car?", "What is the brand of the car?"],
     }
 
     with torch.inference_mode():
@@ -198,3 +211,6 @@ if __name__ == "__main__":
         print(batch_text)
         output = model.get_outputs(batch_text=batch_text, batch_images=samples["image_raw"], min_generation_length=0, max_generation_length=5, num_beams=3, length_penalty=0.0)
         print(output)
+        attention = model(batch_text=batch_text, batch_images=samples["image_raw"], output_attentions=True, output_hidden_states=True)
+        for i in range(len(attention.attentions)):
+            print(attention.attentions[i].shape)
